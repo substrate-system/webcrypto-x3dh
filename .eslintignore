@@ -1,0 +1,5 @@
+dist/*
+public/*
+test/*.js
+src/*.js
+docs
