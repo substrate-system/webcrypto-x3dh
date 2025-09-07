@@ -1,60 +1,13 @@
 /**
- * Rawr-X3DH -- eXtended 3-way Diffie-Hellman
- *
- * Specification by Open Whisper Systems <https://signal.org/docs/specifications/x3dh/>
- * Powered by Libsodium <https://libsodium.gitbook.io/doc/>
- *
- * Implemented by Soatok Dreamseeker <https://soatok.blog>
- *
- * ................................:.................
- * .............................-+yd-................
- * ............/+:-.....+/oys++://:m:................
- * --........../y///oyssyyyyhddh+-:y/................
- * --------.....o--+syyso/syyyhho:--+..........:-....
- * ----------.....:/ssss+ooyoosyo//yo.--------oy:....
- * --------------:+//+//++:`-/o-syyy/-------+yo------
- * --------------:oy++:s. ++:+: `ys/------/ss:-------
- * ---------------:+++syh--/++++oss//---:oy+---------
- * ----------------:syyhhysosssyyyyhso/+yo:----------
- * ----------------::shddyyhyyyyshdhyyyy/------------
- * ----------------:shhhyyyssssssoyhhhyhho/::--------
- * ::::::---------:+shhhddd+o+++++yddhhhhhyyyso+::::-
- * ::::::::::::o+oyssyhyhdh+///:+hhoshhhhhhhhyo+:::::
- * ::::::::::::+syyssss/:yyoo+sydo/o+s+/+osyysoo/::::
- * ::::::::::::/+ssyyyyy/:oyyhhhs/ss/y/::::::::::::::
- * :::::::::::::::/+syhhhsyhhhhyyss+oo/::::::::::::::
- * :::::::::/o+/:::::/+syhddddysyso+so/:::::////:::::
- * ::::::+yhhyhhs::::::/yhdddddssso/ss:::::::///:::::
- * :::::::::hhhh+/+/:/shoshyysss/  `+s:::::://::::/::
- * ::::::::+hhhho:+sshhsyhhhs+:.     `-//::::::::::::
- * ::::::::ohhyoo+oyhyyhhhyyssoo/:-`    .:/::::::::::
- * :::::::::syso+syhhhhhhhhhhhhhhyyyo:`   ./:::::::::
- * :::::::::--://+o++osyo+yhhhhhhhhhhyys/`  :::::::::
- * ::::::--.:/+/::::-::::yhhhhhhhhhhhyyy+.  :::::::::
- * :------://:::::----:::/yhyyyyyyyyyys+`   :+:::::::
- * ------::-----------:shyhhyyyyss+/:-...-::+//::::::
- * ------------------/yhhhhhhyyyssso+::::::::::::::::
- * -----------------+yyyhhhhhhhyyssso+/---------:::::
- * ---------------/syyys/yhhhhhhyyyysss+-------------
- * .............:syyyyo---oyhhhhhhhhyyyhs------------
- * ...........-oyyyyyo....-+syyhyyhhhhddy------------
- * ...........syyyyys-......-::::+:////:.------------
- * ...........yyyyys:............-...............----
- * ...........+sss:..................................
- * .....````````.``..................................
- *
- *
  * X3DH -- eXtended 3-way Diffie-Hellman
  *
  * Specification by Open Whisper Systems <https://signal.org/docs/specifications/x3dh/>
  * Powered by @substrate-system/keys
  *
- * Implemented by Soatok Dreamseeker <https://soatok.blog>
- * Re-implemented using @substrate-system/keys for @substrate-system/x3dh
+ * Originally implemented by Soatok Dreamseeker <https://soatok.blog>
  */
 import { exportPublicKey } from '@substrate-system/keys/ecc'
 import { webcrypto } from '@substrate-system/one-webcrypto'
-// import { fromBase64, toBase64 } from '@substrate-system/keys/util'
 import {
     CryptographyKey,
     type KeyDerivationFunction,

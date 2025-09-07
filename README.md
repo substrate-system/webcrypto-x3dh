@@ -1,15 +1,19 @@
 # x3dh
-[![tests](https://img.shields.io/github/actions/workflow/status/substrate-system/x3dh/nodejs.yml?style=flat-square)](https://github.com/substrate-system/x3dh/actions/workflows/nodejs.yml)
-[![types](https://img.shields.io/npm/types/@substrate-system/x3dh?style=flat-square)](README.md)
+[![tests](https://img.shields.io/github/actions/workflow/status/substrate-system/webcrypto-x3dh/nodejs.yml?style=flat-square)](https://github.com/substrate-system/webcrypto-x3dh/actions/workflows/nodejs.yml)
+[![types](https://img.shields.io/npm/types/@substrate-system/webcrypto-x3dh?style=flat-square)](README.md)
 [![module](https://img.shields.io/badge/module-ESM-blue?style=flat-square)](README.md)
 [![semantic versioning](https://img.shields.io/badge/semver-2.0.0-blue?logo=semver&style=flat-square)](https://semver.org/)
-[![install size](https://flat.badgen.net/packagephobia/install/@substrate-system/x3dh?cache-control=no-cache)](https://packagephobia.com/result?p=@substrate-system/x3dh)
-[![GZip size](https://flat.badgen.net/bundlephobia/minzip/@substrate-system/x3dh)](https://bundlephobia.com/package/@substrate-system/x3dh)
-[![License: ISC](https://img.shields.io/badge/License-ISC-brightgreen.svg?style=flat-square)](https://opensource.org/licenses/ISC)
+[![install size](https://flat.badgen.net/packagephobia/install/@substrate-system/webcrypto-x3dh?cache-control=no-cache)](https://packagephobia.com/result?p=@substrate-system/webcrypto-x3dh)
+[![GZip size](https://flat.badgen.net/bundlephobia/minzip/@substrate-system/webcrypto-x3dh)](https://bundlephobia.com/package/@substrate-system/x3dh)
+[![license](https://img.shields.io/badge/license-Big_Time-blue?style=flat-square)](LICENSE)
 
 
 TypeScript implementation of X3DH, as described in
 ***[Going Bark: A Furry's Guide to End-to-End Encryption](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/)***.
+
+This uses the
+[Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API),
+so is usable in browsers.
 
 ## fork
 
@@ -46,17 +50,20 @@ key exchange, with a few minor tweaks:
 
 This library is designed to work across different JavaScript environments:
 
-- **Browser environments** - Works with the Web Crypto API and handles Ed25519 key format differences
+- **Browser environments** - Works with the Web Crypto API and handles
+  ed25519 key format differences
 - **Node.js** - Uses `@substrate-system/one-webcrypto` for compatibility  
 - **Web Workers** - Full support for background processing
-- **React Native** - Compatible with React Native's crypto implementations
 
 ### Improved Browser Compatibility (v0.4.0)
 
-The library now handles Ed25519 key format differences between browsers and Node.js automatically:
-- Automatically detects and supports both raw (32-byte) and structured (SPKI/PKCS8) Ed25519 key formats
+The library now handles Ed25519 key format differences between browsers and
+Node.js automatically:
+- Automatically detects and supports both raw (32-byte) and structured
+  (SPKI/PKCS8) Ed25519 key formats
 - Exports keys in the format most compatible with the current environment
-- Fallback mechanisms ensure keys work across different Web Crypto API implementations
+- Fallback mechanisms ensure keys work across different Web Crypto
+  API implementations
 
 ### Key Storage
 
@@ -68,7 +75,7 @@ The `DefaultIdentityKeyManager` no longer depends on Node.js filesystem operatio
 ## Installation
 
 ```sh
-npm i -S @substrate-system/x3dh
+npm i -S @substrate-system/webcrypto-x3dh
 ```
 
 ## Usage
@@ -88,16 +95,16 @@ algorithm implementations.
 import { X3DH } from '@substrate-system/x3dh'
 
 const x3dh = new X3DH(
-    sessionKeyManager,  /* SessionKeyManagerInterface */
-    identityKeyManager,  /* IdentityKeyManagerInterface */
-    symmetricEncryptionHandler,  /* SymmetricEncryptionInterface */
-    keyDerivationFunction  /* KeyDerivationFunction */
+    sessionKeyManager,  // SessionKeyManagerInterface
+    identityKeyManager,  // IdentityKeyManagerInterface
+    symmetricEncryptionHandler,  // SymmetricEncryptionInterface
+    keyDerivationFunction  // KeyDerivationFunction
 )
 ```
 
 Once your X3DH object is instantiated, you will be able to initialize handshakes
-either as a sender or as a recipient. Then you will be able to encrypt additional
-messages on either side.
+either as a sender or as a recipient. Then you will be able to encrypt
+additional messages on either side.
 
 ```ts
 const firstEncrypted = await x3dh.initSend(

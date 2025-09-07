@@ -1,5 +1,8 @@
-import { exportPublicKey } from '@substrate-system/keys/ecc'
-import { ed25519Verify } from '@substrate-system/keys/util'
+import {
+    exportPublicKey,
+    verify as ed25519Verify
+} from '@substrate-system/keys/ecc'
+import { publicKeyToDid } from '@substrate-system/keys'
 import type { CryptographyKey } from './symmetric.js'
 
 export type Keypair = {secretKey:CryptoKey, publicKey:CryptoKey};
@@ -10,7 +13,7 @@ export type Keypair = {secretKey:CryptoKey, publicKey:CryptoKey};
  * @param {Uint8Array[]} args
  * @returns {Uint8Array}
  */
-export function concat (...args:Uint8Array[]):Uint8Array {
+export function concat (...args:Uint8Array[]):Uint8Array<ArrayBuffer> {
     let length = 0
     for (const arg of args) {
         length += arg.length
@@ -85,51 +88,14 @@ export async function generateKeyPair ():Promise<Keypair> {
  * @param {number} preKeyCount
  * @returns {Keypair[]}
  */
-export async function generateBundle (preKeyCount:number = 100):Promise<Keypair[]> {
+export async function generateBundle (
+    preKeyCount:number = 100
+):Promise<Keypair[]> {
     const bundle:Keypair[] = []
     for (let i = 0; i < preKeyCount; i++) {
         bundle.push(await generateKeyPair())
     }
     return bundle
-}
-
-/**
- * SHA-256 hash of concatenated public keys for signing
- *
- * @param {CryptoKey[]} publicKeys
- * @returns {Uint8Array}
- */
-export async function preHashPublicKeysForSigning (
-    publicKeys:CryptoKey[]
-):Promise<Uint8Array> {
-    // First, get the length as 4 bytes
-    const pkLen = new Uint8Array(4)
-    pkLen[0] = (publicKeys.length >>> 24) & 0xff
-    pkLen[1] = (publicKeys.length >>> 16) & 0xff
-    pkLen[2] = (publicKeys.length >>> 8) & 0xff
-    pkLen[3] = publicKeys.length & 0xff
-
-    // Get all public key raw bytes
-    const keyBytes: Uint8Array[] = []
-    keyBytes.push(pkLen)
-
-    for (const pk of publicKeys) {
-        try {
-            const raw = await globalThis.crypto.subtle.exportKey('raw', pk)
-            keyBytes.push(new Uint8Array(raw))
-        } catch (_error) {
-            // If raw export fails, try with exportPublicKey from keys module
-            const raw = await exportPublicKey({ publicKey: pk } as CryptoKeyPair)
-            keyBytes.push(new Uint8Array(raw))
-        }
-    }
-
-    // Concatenate all bytes
-    const combined = concat(...keyBytes)
-
-    // Hash with SHA-256
-    const hash = await globalThis.crypto.subtle.digest('SHA-256', combined)
-    return new Uint8Array(hash)
 }
 
 /**
@@ -149,20 +115,27 @@ export async function signBundle (
             throw new Error('Invalid signing key: must be a CryptoKey object')
         }
 
-        // Accept Ed25519 algorithm names (we're using Web Crypto directly for Ed25519)
+        // Accept Ed25519 algorithm names
+        // (we're using Web Crypto directly for Ed25519)
         const algorithmName = signingKey.algorithm?.name
         if (algorithmName !== 'Ed25519') {
-            throw new Error(`Invalid signing key algorithm: expected Ed25519, got ${algorithmName}`)
+            throw new Error('Invalid signing key algorithm: expected Ed25519,' +
+                ` got ${algorithmName}`)
         }
 
         if (signingKey.type !== 'private') {
-            throw new Error(`Invalid signing key type: expected private, got ${signingKey.type}`)
+            throw new Error('Invalid signing key type: expected private,' +
+                ` got ${signingKey.type}`)
         }
 
         const hash = await preHashPublicKeysForSigning(publicKeys)
 
         // Use Ed25519 signing directly
-        const signature = await globalThis.crypto.subtle.sign('Ed25519', signingKey, hash)
+        const signature = await globalThis.crypto.subtle.sign(
+            'Ed25519',
+            signingKey,
+            hash
+        )
         const signatureBytes = new Uint8Array(signature)
 
         return signatureBytes
@@ -187,21 +160,27 @@ export async function verifyBundle (
         const hash = await preHashPublicKeysForSigning(publicKeys)
 
         // Export the verification key to use with keys module
-        const publicKeyBytes = await exportPublicKey({ publicKey: verificationKey } as CryptoKeyPair)
+        const publicKeyBytes = await exportPublicKey({
+            publicKey: verificationKey
+        } as CryptoKeyPair)
 
-        // Use the keys module's Ed25519 verification to match MLS repo
-        const isValid = await ed25519Verify({
-            message: hash,
-            publicKey: new Uint8Array(publicKeyBytes),
-            signature
-        })
+        const u8 = new Uint8Array(publicKeyBytes)
+        const pubDid = await publicKeyToDid(u8)
+
+        const isValid = await ed25519Verify(
+            hash,
+            signature,
+            pubDid
+        )
 
         return isValid
     } catch (error) {
         console.error('Bundle verification error:', error)
         return false
     }
-}/**
+}
+
+/**
  * Wipe a cryptography key's internal buffer.
  * Note: This is a no-op for non-extractable keys in WebCrypto
  *
@@ -238,4 +217,43 @@ export function hexToArrayBuffer (hex:string):ArrayBuffer {
         bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
     }
     return bytes.buffer
+}
+
+/**
+ * SHA-256 hash of concatenated public keys for signing
+ *
+ * @param {CryptoKey[]} publicKeys
+ * @returns {Uint8Array}
+ */
+export async function preHashPublicKeysForSigning (
+    publicKeys:CryptoKey[]
+):Promise<Uint8Array<ArrayBuffer>> {
+    // First, get the length as 4 bytes
+    const pkLen = new Uint8Array(4)
+    pkLen[0] = (publicKeys.length >>> 24) & 0xff
+    pkLen[1] = (publicKeys.length >>> 16) & 0xff
+    pkLen[2] = (publicKeys.length >>> 8) & 0xff
+    pkLen[3] = publicKeys.length & 0xff
+
+    // Get all public key raw bytes
+    const keyBytes: Uint8Array[] = []
+    keyBytes.push(pkLen)
+
+    for (const pk of publicKeys) {
+        try {
+            const raw = await globalThis.crypto.subtle.exportKey('raw', pk)
+            keyBytes.push(new Uint8Array(raw))
+        } catch (_error) {
+            // If raw export fails, try with exportPublicKey from keys module
+            const raw = await exportPublicKey({ publicKey: pk } as CryptoKeyPair)
+            keyBytes.push(new Uint8Array(raw))
+        }
+    }
+
+    // Concatenate all bytes
+    const combined = concat(...keyBytes)
+
+    // Hash with SHA-256
+    const hash = await globalThis.crypto.subtle.digest('SHA-256', combined)
+    return new Uint8Array(hash)
 }
