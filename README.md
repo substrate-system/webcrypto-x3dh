@@ -119,7 +119,20 @@ the server to obtain the identity key, signed pre-key, and optional one-time
 key for the handshake.
 
 See the definition of the `InitClientFunction` type in
-[src/index.ts](https://github.com/substrate-system/x3dh/blob/ad4de8bf76fc5e72a3c292a06a1a281640cf4d4a/src/index.ts#L111).
+[src/index.ts](https://github.com/substrate-system/webcrypto-x3dh/blob/e0a3a1a342317de116ee41f73072448a8218da5c/src/index.ts#L134).
+
+```ts
+type InitClientFunction = (id:string)=>Promise<InitServerInfo>
+
+type InitServerInfo = {
+    IdentityKey:string;
+    SignedPreKey:{
+        Signature:string;
+        PreKey:string;
+    };
+    OneTimeKey?:string;
+};
+```
 
 Once this has completed, you can call `encryptNext()` multiple times to append
 messages to send.

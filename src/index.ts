@@ -107,12 +107,12 @@ async function scalarMult (
  * the X3DH handshake from a sender's side.
  */
 export type InitServerInfo = {
-    IdentityKey:string,
+    IdentityKey:string;
     SignedPreKey:{
-        Signature:string,
-        PreKey:string
-    },
-    OneTimeKey?:string
+        Signature:string;
+        PreKey:string;
+    };
+    OneTimeKey?:string;
 };
 
 /**
