@@ -1,12 +1,11 @@
-import {
-    exportPublicKey,
-    verify as ed25519Verify
-} from '@substrate-system/keys/ecc'
-import { publicKeyToDid } from '@substrate-system/keys'
+import { exportPublicKey } from '@substrate-system/keys/ecc'
 import type { CryptographyKey } from './symmetric.js'
 
-export type Keypair = {secretKey:CryptoKey, publicKey:CryptoKey};
+export type Keypair = { secretKey:CryptoKey; publicKey:CryptoKey };
 
+/**
+ * Helper -- uint8 to ArrayBuffer
+ */
 export function toArrayBuffer (u8:Uint8Array):ArrayBuffer {
     if (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength) {
         return u8.buffer as ArrayBuffer
@@ -110,12 +109,12 @@ export async function generateBundle (
  *
  * @param {CryptoKey} signingKey Ed25519 private key
  * @param {CryptoKey[]} publicKeys X25519 public keys
- * @returns {Uint8Array}
+ * @returns {Promise<Uint8Array<ArrayBuffer>>}
  */
 export async function signBundle (
     signingKey:CryptoKey,
     publicKeys:CryptoKey[]
-):Promise<Uint8Array> {
+):Promise<Uint8Array<ArrayBuffer>> {
     try {
         // Validate the signing key
         if (!signingKey || typeof signingKey !== 'object') {
@@ -161,23 +160,17 @@ export async function signBundle (
 export async function verifyBundle (
     verificationKey:CryptoKey,
     publicKeys:CryptoKey[],
-    signature:Uint8Array
+    signature:Uint8Array<ArrayBuffer>
 ):Promise<boolean> {
     try {
         const hash = await preHashPublicKeysForSigning(publicKeys)
 
-        // Export the verification key to use with keys module
-        const publicKeyBytes = await exportPublicKey({
-            publicKey: verificationKey
-        } as CryptoKeyPair)
-
-        const u8 = new Uint8Array(publicKeyBytes)
-        const pubDid = await publicKeyToDid(u8)
-
-        const isValid = await ed25519Verify(
-            hash,
+        // Use Web Crypto API directly for Ed25519 verification to match signing
+        const isValid = await globalThis.crypto.subtle.verify(
+            'Ed25519',
+            verificationKey,
             signature,
-            pubDid
+            hash
         )
 
         return isValid
