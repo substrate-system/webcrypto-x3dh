@@ -1,3 +1,4 @@
+import { webcrypto } from '@substrate-system/one-webcrypto'
 import { test } from '@substrate-system/tapzero'
 import { signBundle, X3DH } from '../src/index.js'
 import { toArrayBuffer } from '../src/util.js'
@@ -7,25 +8,18 @@ async function generateEd25519KeyPair ():Promise<{
     publicKey: CryptoKey,
     privateKey: CryptoKey
 }> {
-    const keyPair = await globalThis.crypto.subtle.generateKey(
+    const keyPair = await webcrypto.subtle.generateKey(
         { name: 'Ed25519' },
-        true,  // extractable for getting raw bytes
+        true,  // extractable
         ['sign', 'verify']
     ) as CryptoKeyPair
     return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey }
 }
 
 // Helper function to get raw bytes from a CryptoKey
-async function exportKeyAsBytes (key:CryptoKey):Promise<Uint8Array> {
-    const rawKey = await globalThis.crypto.subtle.exportKey('raw', key)
+async function exportKeyAsBytes (key:CryptoKey):Promise<Uint8Array<ArrayBuffer>> {
+    const rawKey = await webcrypto.subtle.exportKey('raw', key)
     return new Uint8Array(rawKey)
-}
-
-// Helper function to convert bytes to hex string
-function arrayBufferToHex (buffer: ArrayBuffer): string {
-    return Array.from(new Uint8Array(buffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
 }
 
 test('generate one time keys', async t => {
@@ -123,3 +117,10 @@ test('x3dh Handshake with one-time keys', async t => {
         }
     }
 })
+
+// Helper function to convert bytes to hex string
+function arrayBufferToHex (buffer:ArrayBuffer):string {
+    return Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+}

@@ -1,6 +1,11 @@
 import { exportPublicKey } from '@substrate-system/keys/ecc'
-import { generateEd25519IdentityKeyPair, wipe, arrayBufferToHex, hexToArrayBuffer } from './util.js'
-import type { Keypair } from './util.js'
+import {
+    generateEd25519IdentityKeyPair,
+    wipe,
+    arrayBufferToHex,
+    hexToArrayBuffer,
+    type Keypair
+} from './util.js'
 import { CryptographyKey } from './symmetric.js'
 
 export type IdentityKeyPair = {
@@ -17,26 +22,31 @@ type SessionKeys = {
 };
 
 export interface IdentityKeyManagerInterface {
-    fetchAndWipeOneTimeSecretKey(pk:string):Promise<CryptoKey>;
-    generateIdentityKeypair():Promise<IdentityKeyPair>;
-    generatePreKeypair():Promise<PreKeyPair>;
-    getIdentityKeypair():Promise<IdentityKeyPair>;
-    getMyIdentityString():Promise<string>;
-    getPreKeypair():Promise<PreKeyPair>;
-    persistOneTimeKeys(bundle: Keypair[]):Promise<void>;
-    setIdentityKeypair(identitySecret: CryptoKey, identityPublic?: CryptoKey):
-        Promise<IdentityKeyManagerInterface>;
-    setMyIdentityString(id: string):Promise<void>;
+    fetchAndWipeOneTimeSecretKey (pk:string):Promise<CryptoKey>;
+    generateIdentityKeypair ():Promise<IdentityKeyPair>;
+    generatePreKeypair ():Promise<PreKeyPair>;
+    getIdentityKeypair ():Promise<IdentityKeyPair>;
+    getMyIdentityString ():Promise<string>;
+    getPreKeypair ():Promise<PreKeyPair>;
+    persistOneTimeKeys (bundle:Keypair[]):Promise<void>;
+    setIdentityKeypair (
+        identitySecret:CryptoKey,
+        identityPublic?:CryptoKey
+    ):Promise<IdentityKeyManagerInterface>;
+    setMyIdentityString (id:string):Promise<void>;
 }
 
 export interface SessionKeyManagerInterface {
-    getAssocData(id:string):Promise<string>;
-    getEncryptionKey(id:string, recipient?:boolean):Promise<CryptographyKey>;
-    destroySessionKey(id:string):Promise<void>;
-    listSessionIds():Promise<string[]>;
-    setAssocData(id:string, assocData:string):Promise<void>;
-    setSessionKey(id:string, key:CryptographyKey, recipient?:boolean):
-        Promise<void>;
+    getAssocData (id:string):Promise<string>;
+    getEncryptionKey (id:string, recipient?:boolean):Promise<CryptographyKey>;
+    destroySessionKey (id:string):Promise<void>;
+    listSessionIds ():Promise<string[]>;
+    setAssocData (id:string, assocData:string):Promise<void>;
+    setSessionKey (
+        id:string,
+        key:CryptographyKey,
+        recipient?:boolean
+    ):Promise<void>;
 }
 
 /**
