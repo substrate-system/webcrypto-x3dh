@@ -83,7 +83,7 @@ async function scalarMult (
     publicKey:X25519PublicKey
 ):Promise<CryptographyKey> {
     // Use the Web Crypto API's X25519 ECDH for proper key derivation
-    const derivedKey = await globalThis.crypto.subtle.deriveKey(
+    const derivedKey = await webcrypto.subtle.deriveKey(
         { name: 'X25519', public: publicKey },
         privateKey,
         { name: 'AES-GCM', length: 256 },

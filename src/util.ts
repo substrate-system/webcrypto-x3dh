@@ -1,3 +1,4 @@
+import { webcrypto } from '@substrate-system/one-webcrypto'
 import { exportPublicKey } from '@substrate-system/keys/ecc'
 import type { CryptographyKey } from './symmetric.js'
 
@@ -46,7 +47,7 @@ export async function generateEd25519IdentityKeyPair (): Promise<{
 }> {
     try {
         // Use Web Crypto API directly for Ed25519 since keys module uses ECDSA
-        const keyPair = await globalThis.crypto.subtle.generateKey(
+        const keyPair = await webcrypto.subtle.generateKey(
             { name: 'Ed25519' },
             true, // extractable for export/import operations
             ['sign', 'verify']
@@ -76,7 +77,7 @@ export async function generateEd25519IdentityKeyPair (): Promise<{
  */
 export async function generateKeyPair ():Promise<Keypair> {
     // Use Web Crypto API directly for X25519 to avoid issues with keys module
-    const kp = await globalThis.crypto.subtle.generateKey(
+    const kp = await webcrypto.subtle.generateKey(
         { name: 'X25519' },
         true, // extractable for public key export
         ['deriveKey']
@@ -137,7 +138,7 @@ export async function signBundle (
         const hash = await preHashPublicKeysForSigning(publicKeys)
 
         // Use Ed25519 signing directly
-        const signature = await globalThis.crypto.subtle.sign(
+        const signature = await webcrypto.subtle.sign(
             'Ed25519',
             signingKey,
             hash
@@ -166,7 +167,7 @@ export async function verifyBundle (
         const hash = await preHashPublicKeysForSigning(publicKeys)
 
         // Use Web Crypto API directly for Ed25519 verification to match signing
-        const isValid = await globalThis.crypto.subtle.verify(
+        const isValid = await webcrypto.subtle.verify(
             'Ed25519',
             verificationKey,
             signature,
@@ -214,7 +215,7 @@ export function arrayBufferToHex (buffer:ArrayBuffer|Uint8Array):string {
 export function hexToArrayBuffer (hex:string):ArrayBuffer {
     const bytes = new Uint8Array(hex.length / 2)
     for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
+        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
     }
     return bytes.buffer
 }
@@ -241,7 +242,7 @@ export async function preHashPublicKeysForSigning (
 
     for (const pk of publicKeys) {
         try {
-            const raw = await globalThis.crypto.subtle.exportKey('raw', pk)
+            const raw = await webcrypto.subtle.exportKey('raw', pk)
             keyBytes.push(new Uint8Array(raw))
         } catch (_error) {
             // If raw export fails, try with exportPublicKey from keys module
@@ -254,6 +255,6 @@ export async function preHashPublicKeysForSigning (
     const combined = concat(...keyBytes)
 
     // Hash with SHA-256
-    const hash = await globalThis.crypto.subtle.digest('SHA-256', combined)
+    const hash = await webcrypto.subtle.digest('SHA-256', combined)
     return new Uint8Array(hash)
 }
