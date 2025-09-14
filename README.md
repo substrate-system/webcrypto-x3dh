@@ -1,4 +1,4 @@
-# x3dh
+# webcrypto x3dh
 [![tests](https://img.shields.io/github/actions/workflow/status/substrate-system/webcrypto-x3dh/nodejs.yml?style=flat-square)](https://github.com/substrate-system/webcrypto-x3dh/actions/workflows/nodejs.yml)
 [![types](https://img.shields.io/npm/types/@substrate-system/webcrypto-x3dh?style=flat-square)](README.md)
 [![module](https://img.shields.io/badge/module-ESM-blue?style=flat-square)](README.md)
@@ -7,9 +7,8 @@
 [![GZip size](https://flat.badgen.net/bundlephobia/minzip/@substrate-system/webcrypto-x3dh)](https://bundlephobia.com/package/@substrate-system/x3dh)
 [![license](https://img.shields.io/badge/license-Big_Time-blue?style=flat-square)](LICENSE)
 
-
-TypeScript implementation of X3DH, as described in
-***[Going Bark: A Furry's Guide to End-to-End Encryption](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/)***.
+X3DH for the browser. This is a typeScript implementation of X3DH, as described
+in ***[Going Bark: A Furry's Guide to End-to-End Encryption](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/)***.
 
 **This uses the**
 **[Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)**,
@@ -34,6 +33,12 @@ Thanks `@soatok` for working in public.
 
 <!-- tocstop -->
 
+## Install
+
+```sh
+npm i -S @substrate-system/webcrypto-x3dh
+```
+
 ## What's This?
 
 This library implements the [Extended Triple Diffie-Hellman](https://signal.org/docs/specifications/x3dh/)
@@ -50,10 +55,9 @@ key exchange, with a few minor tweaks:
 
 This library is designed to work across different JavaScript environments:
 
-- **Browser environments** - Works with the Web Crypto API and handles
-  ed25519 key format differences
-- **Node.js** - Uses `@substrate-system/one-webcrypto` for compatibility  
-- **Web Workers** - Full support for background processing
+- **Browser environments** - Works with the Web Crypto API
+- **Node.js** - Uses the webcrypto API in Node
+- **Web Workers** - Background processing
 
 ### Improved Browser Compatibility (v0.4.0)
 
@@ -67,16 +71,13 @@ Node.js automatically:
 
 ### Key Storage
 
-The `DefaultIdentityKeyManager` no longer depends on Node.js filesystem operations. Instead:
+The `DefaultIdentityKeyManager` no longer depends on Node.js filesystem
+operations. Instead:
 - Use `exportIdentityKeypair()` to get key data for storage
-- Use `loadIdentityKeypair(storedData)` to restore keys from your preferred storage method
-- Implement your own storage strategy (localStorage, AsyncStorage, database, etc.)
-
-## Installation
-
-```sh
-npm i -S @substrate-system/webcrypto-x3dh
-```
+- Use `loadIdentityKeypair(storedData)` to restore keys from your preferred
+  storage method
+- Implement your own storage strategy (localStorage, AsyncStorage,
+  database, etc.)
 
 ## Usage
 
