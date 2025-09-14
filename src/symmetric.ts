@@ -1,3 +1,4 @@
+import { webcrypto } from '@substrate-system/one-webcrypto'
 import { concat } from './util.js'
 
 const VERSION = 'v1'
@@ -14,14 +15,14 @@ const PREFIX_COMMIT_KEY = new Uint8Array([
  */
 export class CryptographyKey {
     private key?:CryptoKey
-    private buffer?:Uint8Array
+    private buffer?:Uint8Array<ArrayBuffer>
 
     constructor (keyMaterial:Uint8Array|CryptoKey) {
         if (keyMaterial instanceof CryptoKey) {
             this.key = keyMaterial
         } else {
             // Store the buffer for later import
-            this.buffer = keyMaterial
+            this.buffer = keyMaterial as Uint8Array<ArrayBuffer>
         }
     }
 
@@ -44,7 +45,7 @@ export class CryptographyKey {
         throw new Error('No key material available')
     }
 
-    getBuffer ():Uint8Array {
+    getBuffer ():Uint8Array<ArrayBuffer> {
         if (this.buffer) {
             return this.buffer
         }
@@ -73,7 +74,7 @@ export interface SymmetricEncryptionInterface {
  */
 export class SymmetricCrypto implements SymmetricEncryptionInterface {
     async encrypt (
-        message:string|Uint8Array,
+        message:string|Uint8Array<ArrayBuffer>,
         key:CryptographyKey,
         assocData?:string
     ):Promise<string> {
@@ -90,10 +91,10 @@ export class SymmetricCrypto implements SymmetricEncryptionInterface {
 }
 
 export type KeyDerivationFunction = (
-    ikm:Uint8Array,
-    salt?:Uint8Array,
-    info?:Uint8Array
-) => Promise<Uint8Array>;
+    ikm:Uint8Array<ArrayBuffer>,
+    salt?:Uint8Array<ArrayBuffer>,
+    info?:Uint8Array<ArrayBuffer>
+) => Promise<Uint8Array<ArrayBuffer>>;
 
 /**
  * Encrypt data using AES-GCM.
@@ -105,7 +106,7 @@ export type KeyDerivationFunction = (
  * @returns {string}
  */
 export async function encryptData (
-    message:string|Uint8Array,
+    message:string|Uint8Array<ArrayBuffer>,
     key:CryptographyKey,
     assocData?:string
 ):Promise<string> {
@@ -120,7 +121,8 @@ export async function encryptData (
 
     // Convert message to Uint8Array
     const messageBytes = typeof message === 'string' ?
-        new TextEncoder().encode(message) : message
+        new TextEncoder().encode(message) :
+        message
 
     // Create AES-GCM key for encryption
     const aesKey = await globalThis.crypto.subtle.importKey(
@@ -225,10 +227,10 @@ export async function decryptData (
  * @param info
  */
 export async function blakeKdf (
-    ikm:Uint8Array,
-    salt?:Uint8Array|CryptographyKey,
-    info?:Uint8Array
-):Promise<Uint8Array> {
+    ikm:Uint8Array<ArrayBuffer>,
+    salt?:Uint8Array<ArrayBuffer>|CryptographyKey,
+    info?:Uint8Array<ArrayBuffer>
+):Promise<Uint8Array<ArrayBuffer>> {
     if (!salt) {
         salt = new Uint8Array(32) // All zeros
     } else if (salt instanceof CryptographyKey) {
@@ -239,7 +241,7 @@ export async function blakeKdf (
     }
 
     // Import IKM as HKDF key material
-    const keyMaterial = await globalThis.crypto.subtle.importKey(
+    const keyMaterial = await webcrypto.subtle.importKey(
         'raw',
         ikm,
         'HKDF',
@@ -319,9 +321,12 @@ function arrayBuffersEqual (buf1:ArrayBuffer, buf2:ArrayBuffer):boolean {
  * @param {Uint8Array} nonce
  * @returns {{encKey: CryptographyKey, commitment: Uint8Array}}
  */
-export async function deriveKeys (key:CryptographyKey, nonce:Uint8Array):Promise<{
+export async function deriveKeys (
+    key:CryptographyKey,
+    nonce:Uint8Array<ArrayBuffer>
+):Promise<{
     encKey:CryptographyKey;
-    commitment:Uint8Array;
+    commitment:Uint8Array<ArrayBuffer>;
 }> {
     // Get HMAC key for deriving encryption key
     const keyBuffer = key.getBuffer()
