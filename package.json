@@ -34,7 +34,7 @@
     "postversion": "git push --follow-tags && npm publish",
     "prepublishOnly": "npm run build"
   },
-  "repository": "github:substrate-system/x3dh",
+  "repository": "github:substrate-system/webcrypto-x3dh",
   "keywords": [
     "X3DH",
     "Key agreement",
