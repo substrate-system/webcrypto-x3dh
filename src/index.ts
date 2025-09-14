@@ -15,14 +15,10 @@ import {
     blakeKdf,
     SymmetricCrypto
 } from './symmetric.js'
-import type {
-    SessionKeyManagerInterface,
-    IdentityKeyManagerInterface
-} from './persistence.js'
 import {
-    DefaultSessionKeyManager,
-    DefaultIdentityKeyManager
-} from './persistence.js'
+    type SessionKeyManagerInterface,
+    createSessionManager
+} from './session-storage.js'
 import {
     concat,
     generateKeyPair,
@@ -148,26 +144,34 @@ type RecipientInitWithSK = {
     OTK?:string
 };
 
+export type X3DHKeys = {
+    identitySecret:Ed25519SecretKey
+    identityPublic:Ed25519PublicKey
+    preKeySecret:X25519SecretKey
+    preKeyPublic:X25519PublicKey
+}
+
 /**
- * Pluggable X3DH implementation, using Web Crypto API.
+ * X3DH implementation using Web Crypto API.
+ * Keys are passed in instead of being managed internally.
  */
 export class X3DH {
     encryptor:SymmetricEncryptionInterface
     kdf:KeyDerivationFunction
-    identityKeyManager:IdentityKeyManagerInterface
     sessionKeyManager:SessionKeyManagerInterface
+    keys:X3DHKeys
+    identityString:string
+    oneTimeKeys:Map<string, CryptoKey>
 
     constructor (
-        identityKeyManager?:IdentityKeyManagerInterface,
+        keys:X3DHKeys,
+        identityString:string,
         sessionKeyManager?:SessionKeyManagerInterface,
         encryptor?:SymmetricEncryptionInterface,
         kdf?:KeyDerivationFunction
     ) {
         if (!sessionKeyManager) {
-            sessionKeyManager = new DefaultSessionKeyManager()
-        }
-        if (!identityKeyManager) {
-            identityKeyManager = new DefaultIdentityKeyManager()
+            sessionKeyManager = createSessionManager()
         }
         if (!encryptor) {
             encryptor = new SymmetricCrypto()
@@ -178,38 +182,32 @@ export class X3DH {
         this.encryptor = encryptor
         this.kdf = kdf
         this.sessionKeyManager = sessionKeyManager
-        this.identityKeyManager = identityKeyManager
+        this.keys = keys
+        this.identityString = identityString
+        this.oneTimeKeys = new Map<string, CryptoKey>()
     }
 
     /**
      * Generates and signs a bundle of one-time keys.
+     * Stores them locally for later use.
      *
-     * Useful for pushing more OTKs to the server.
-     *
-     * @param {Ed25519SecretKey} signingKey
      * @param {number} numKeys
      */
-    async generateOneTimeKeys (
-        signingKey:Ed25519SecretKey,
-        numKeys:number = 100
-    ):Promise<SignedBundle> {
+    async generateOneTimeKeys (numKeys: number = 100): Promise<SignedBundle> {
         try {
-            // Validate the signing key
-            if (!signingKey || typeof signingKey !== 'object') {
-                throw new Error('Invalid signing key: must be a CryptoKey object')
-            }
-
-            if (signingKey.algorithm?.name !== 'Ed25519') {
-                throw new Error(`Invalid signing key algorithm: expected Ed25519, got ${signingKey.algorithm?.name}`)
-            }
-
             const bundle = await generateBundle(numKeys)
             const publicKeys = bundle.map(x => x.publicKey)
-            const signature = await signBundle(signingKey, publicKeys)
-            await this.identityKeyManager.persistOneTimeKeys(bundle)
+            const signature = await signBundle(this.keys.identitySecret, publicKeys)
 
-            // Hex-encode all the public keys using keys module
-            const encodedBundle:string[] = []
+            // Store one-time keys locally
+            for (const kp of bundle) {
+                const publicKeyRaw = await exportPublicKey({ publicKey: kp.publicKey } as CryptoKeyPair)
+                const publicKeyHex = arrayBufferToHex(publicKeyRaw)
+                this.oneTimeKeys.set(publicKeyHex, kp.secretKey)
+            }
+
+            // Hex-encode all the public keys
+            const encodedBundle: string[] = []
             for (const pk of publicKeys) {
                 const rawKey = await exportPublicKey({ publicKey: pk } as CryptoKeyPair)
                 encodedBundle.push(arrayBufferToHex(rawKey))
@@ -222,6 +220,18 @@ export class X3DH {
         } catch (error) {
             throw new Error(`Failed to generate one-time keys: ${error}`)
         }
+    }
+
+    /**
+     * Get and remove a one-time secret key by its public key hex.
+     */
+    async fetchAndWipeOneTimeSecretKey (publicKeyHex: string): Promise<CryptoKey> {
+        const secretKey = this.oneTimeKeys.get(publicKeyHex)
+        if (!secretKey) {
+            throw new Error('One-time key not found: ' + publicKeyHex)
+        }
+        this.oneTimeKeys.delete(publicKeyHex)
+        return secretKey
     }
 
     /**
@@ -258,9 +268,11 @@ export class X3DH {
         //   we'll use a simplified approach where the pre-key serves
         //   as the identity exchange key
 
-        // Use the sender's pre-key
-        // as their identity exchange key for DH operations
-        const senderPreKey = await this.identityKeyManager.getPreKeypair()
+        // Use the sender's pre-key for DH operations
+        const senderPreKey = {
+            preKeySecret: this.keys.preKeySecret,
+            preKeyPublic: this.keys.preKeyPublic
+        }
 
         // See the X3DH specification
         // DH1 = DH(IK_A, SPK_B) - sender identity (pre-key)
@@ -274,7 +286,7 @@ export class X3DH {
         // Use signed pre-key as recipient identity
         const DH2 = await scalarMult(ephSecret, signedPreKey)
         const DH3 = await scalarMult(ephSecret, signedPreKey)
-        let SK
+        let SK:CryptographyKey
         if (res.OneTimeKey) {
             const otk = await importX25519PublicKey(res.OneTimeKey)
             const DH4 = await scalarMult(ephSecret, otk)
@@ -328,17 +340,21 @@ export class X3DH {
         getServerResponse:InitClientFunction,
         message:string|Uint8Array
     ):Promise<InitSenderInfo> {
-        // Get the identity key for the sender:
-        const senderIdentity = await this.identityKeyManager.getMyIdentityString()
-        const identity = await this.identityKeyManager.getIdentityKeypair()
-        const senderPublicKey = identity.identityPublic
-        const senderPreKey = await this.identityKeyManager.getPreKeypair()
+        const senderIdentity = this.identityString
+        const senderPublicKey = this.keys.identityPublic
+        const senderPreKey = {
+            preKeySecret: this.keys.preKeySecret,
+            preKeyPublic: this.keys.preKeyPublic
+        }
 
         // Stub out a call to get the server response:
         const response = await getServerResponse(recipientIdentity)
 
         // Get the shared symmetric key (and other handshake data):
-        const { IK, EK, SK, OTK } = await this.initSenderGetSK(response, senderIdentity)
+        const { IK, EK, SK, OTK } = await this.initSenderGetSK(
+            response,
+            senderIdentity
+        )
 
         // Get the assocData for AEAD using keys module:
         const senderPublicRaw = await exportPublicKey({
@@ -376,13 +392,13 @@ export class X3DH {
      * @param {InitSenderInfo} req
      * @param {string} recipientIdentity - not needed for key operations,
      *   just for context
-     * @param preKeySecret
+     * @param {X25519SecretKey} preKeySecret
      */
     async initRecvGetSk (
         req:InitSenderInfo,
         _recipientIdentity:string,
         preKeySecret:X25519SecretKey
-    ) {
+    ):Promise<{ Sender:string, SK:CryptographyKey, IK:X25519PublicKey }> {
         // Decode strings
         const senderIdentityKey = await importEd25519PublicKey(req.IdentityKey)
         const senderPreKey = await importX25519PublicKey(req.PreKey)
@@ -395,7 +411,10 @@ export class X3DH {
         // with the sender's public keys
 
         // For receiver, we use our pre-key as our identity exchange key
-        const recipientPreKey = await this.identityKeyManager.getPreKeypair()
+        const recipientPreKey = {
+            preKeySecret: this.keys.preKeySecret,
+            preKeyPublic: this.keys.preKeyPublic
+        }
 
         // See the X3DH specification (receiver's perspective):
         // DH1 = DH(SPK_B, IK_A) - recipient's signed pre-key with sender's
@@ -408,10 +427,9 @@ export class X3DH {
         const DH2 = await scalarMult(recipientPreKey.preKeySecret, ephemeral)
         const DH3 = await scalarMult(preKeySecret, ephemeral)
 
-        let SK
+        let SK:CryptographyKey
         if (req.OneTimeKey) {
-            const otk = await this.identityKeyManager
-                .fetchAndWipeOneTimeSecretKey(req.OneTimeKey)
+            const otk = await this.fetchAndWipeOneTimeSecretKey(req.OneTimeKey)
             const DH4 = await scalarMult(otk, ephemeral)
             SK = new CryptographyKey(
                 new Uint8Array(await this.kdf(
@@ -455,10 +473,10 @@ export class X3DH {
      * @param {InitSenderInfo} req
      * @returns {(string|Uint8Array)[]}
      */
-    async initRecv (req:InitSenderInfo):Promise<(string|Uint8Array)[]> {
-        const { identityPublic } = await this.identityKeyManager.getIdentityKeypair()
-        const { preKeySecret } = await this.identityKeyManager.getPreKeypair()
-        const recipientIdentity = await this.identityKeyManager.getMyIdentityString()
+    async initRecv (req: InitSenderInfo): Promise<(string | Uint8Array)[]> {
+        const identityPublic = this.keys.identityPublic
+        const preKeySecret = this.keys.preKeySecret
+        const recipientIdentity = this.identityString
         const { Sender, SK, IK } = await this.initRecvGetSk(
             req,
             recipientIdentity,
@@ -547,12 +565,12 @@ export class X3DH {
      *
      * @param {string} id
      */
-    async setIdentityString (id:string):Promise<void> {
-        return this.identityKeyManager.setMyIdentityString(id)
+    setIdentityString (id: string): void {
+        this.identityString = id
     }
 }
 
 // export the interfaces we use
 export * from './symmetric'
-export * from './persistence'
+export * from './session-storage'
 export * from './util'
