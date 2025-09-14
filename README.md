@@ -69,50 +69,83 @@ Node.js automatically:
 - Fallback mechanisms ensure keys work across different Web Crypto
   API implementations
 
-### Key Storage
+### Key Management
 
-The `DefaultIdentityKeyManager` no longer depends on Node.js filesystem
-operations. Instead:
-- Use `exportIdentityKeypair()` to get key data for storage
-- Use `loadIdentityKeypair(storedData)` to restore keys from your preferred
-  storage method
-- Implement your own storage strategy (localStorage, AsyncStorage,
-  database, etc.)
+This library integrates with `@substrate-system/keys` for identity key management:
+
+- **Identity Keys**: Long-term Ed25519/X25519 keys managed
+  by `@substrate-system/keys`
+- **Session Keys**: Short-term keys for ongoing conversations stored
+  in IndexedDB
+- **Automatic Storage**: Identity keys persist to IndexedDB in browsers,
+  session-only in Node.js
+- **Environment Detection**: Automatically uses IndexedDB when available,
+  falls back to memory
 
 ## Usage
 
-First, import the X3DH class from the module.
+### Basic Setup with @substrate-system/keys
 
 ```ts
-import { X3DH } from '@substrate-system/x3dh'
+import { EccKeys } from '@substrate-system/keys/ecc'
+import { webcrypto } from '@substrate-system/one-webcrypto'
+import { X3DH } from '@substrate-system/webcrypto-x3dh'
 
-const x3dh = new X3DH()
+// 1. Create identity keys using @substrate-system/keys
+const aliceKeys = await EccKeys.create() // Persists to IndexedDB in browser
+await aliceKeys.persist()
+
+// 2. Generate X25519 pre-keys for X3DH
+const preKeyPair = await webcrypto.subtle.generateKey(
+    { name: 'X25519' },
+    true,
+    ['deriveKey']
+) as CryptoKeyPair
+
+// 3. Create X3DH keys object
+const x3dhKeys = {
+    identitySecret: aliceKeys.privateWriteKey,
+    identityPublic: aliceKeys.publicWriteKey,
+    preKeySecret: preKeyPair.privateKey,
+    preKeyPublic: preKeyPair.publicKey
+}
+
+// 4. Initialize X3DH with keys and identity string
+const x3dh = new X3DH(x3dhKeys, aliceKeys.DID)
 ```
 
-Note: You can pass some classes to the constructor to replace the
-algorithm implementations.
+### Constructor Options
+
+You can customize the X3DH implementation:
 
 ```ts
-import { X3DH } from '@substrate-system/x3dh'
-
 const x3dh = new X3DH(
-    sessionKeyManager,  // SessionKeyManagerInterface
-    identityKeyManager,  // IdentityKeyManagerInterface
-    symmetricEncryptionHandler,  // SymmetricEncryptionInterface
-    keyDerivationFunction  // KeyDerivationFunction
+    x3dhKeys,                    // X3DHKeys (required)
+    identityString,              // string (required)
+    sessionKeyManager,           // SessionKeyManagerInterface (optional)
+    symmetricEncryptionHandler,  // SymmetricEncryptionInterface (optional)
+    keyDerivationFunction        // KeyDerivationFunction (optional)
 )
 ```
 
-Once your X3DH object is instantiated, you will be able to initialize handshakes
-either as a sender or as a recipient. Then you will be able to encrypt
-additional messages on either side.
+Session keys are automatically managed using IndexedDB in browsers and
+memory in Node.js.
+
+### Performing X3DH Key Exchange
+
+Once your X3DH object is instantiated, you can perform key exchanges and
+encrypt messages:
 
 ```ts
+// Generate one-time keys for others to use
+const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
+
+// Initiate communication (sender side)
 const firstEncrypted = await x3dh.initSend(
-    'recipient@server2',
+    'recipient-did-string',
     serverApiCallFunc,
     firstMessage
-); 
+)
 ```
 
 The `serverApiCallFunc` parameter should be a function that sends a request to
@@ -135,30 +168,81 @@ type InitServerInfo = {
 };
 ```
 
-Once this has completed, you can call `encryptNext()` multiple times to append
-messages to send.
+
+### Receiving and Ongoing Communication
 
 ```ts
-const nextEncrypted = await x3dh.encryptNext(
-    'recipient@server2',
-    'This is a follow-up message UwU'
-);
+// Receive initial message (recipient side)
+const [senderDID, firstMessage] = await x3dh.initRecv(handshakeData)
+
+// Ongoing secure communication
+const nextEncrypted = await x3dh.encryptNext('recipient-did', 'Follow-up message')
+const nextMessage = await x3dh.decryptNext('sender-did', nextEncrypted)
 ```
 
-On the other side, your communication partner will use the following feature.
+Note: `initRecv()` returns the sender's DID and the decrypted message.
+Session keys are automatically managed and ratcheted for forward secrecy.
+
+### Session Key Management
+
+Session keys are automatically managed with the following features:
+
+- **IndexedDB Storage**: In browsers, session keys persist across page reloads
+- **Memory Fallback**: In Node.js or environments without IndexedDB, uses
+  memory storage
+- **Forward Secrecy**: Keys are ratcheted after each message using SHA-256
+- **Automatic Cleanup**: Use `destroySessionKey(participantId)` to clean
+  up sessions
 
 ```ts
-const [sender, firstMessage] = await x3dh.initRecv(senderInfo);
-const nextMessage = await x3dh.decryptNext(sender, nextEncrypted);
-```
+// Clean up a session when conversation ends
+await x3dh.sessionKeyManager.destroySessionKey('participant-did')
 
-Note: `initRecv()` will always return the sender identity (a string) and the
-message (a `Buffer` that can be converted to a string). The sender identity
-should be usable for `decryptNext()` calls.
+// List all active sessions
+const sessions = await x3dh.sessionKeyManager.listSessionIds()
+```
 
 However, that doesn't mean it's trustworthy! This library only implements
-the X3DH pattern. It doesn't implement the 
+the X3DH pattern. It doesn't implement the
 [Gossamer integration](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/#identity-key-management).
+
+## API Reference
+
+### Types
+
+```ts
+type X3DHKeys = {
+    identitySecret: Ed25519SecretKey
+    identityPublic: Ed25519PublicKey
+    preKeySecret: X25519SecretKey
+    preKeyPublic: X25519PublicKey
+}
+
+type InitServerInfo = {
+    IdentityKey: string;
+    SignedPreKey: {
+        Signature: string;
+        PreKey: string;
+    };
+    OneTimeKey?: string;
+}
+
+type InitSenderInfo = {
+    Sender: string,
+    IdentityKey: string,
+    PreKey: string,
+    EphemeralKey: string,
+    OneTimeKey?: string,
+    CipherText: string
+}
+```
+
+### Main Classes
+
+- `X3DH` - Main class for X3DH operations
+- `IndexedDBSessionManager` - Session key storage using IndexedDB
+- `MemorySessionManager` - In-memory session key storage
+- `SymmetricCrypto` - Default symmetric encryption implementation
 
 ## Should I Use This?
 

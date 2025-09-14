@@ -1,6 +1,6 @@
 import { webcrypto } from '@substrate-system/one-webcrypto'
 import { test } from '@substrate-system/tapzero'
-import { signBundle, X3DH } from '../src/index.js'
+import { signBundle, X3DH, type X3DHKeys } from '../src/index.js'
 import { toArrayBuffer } from '../src/util.js'
 
 // Helper function to generate Ed25519 key pairs
@@ -16,6 +16,32 @@ async function generateEd25519KeyPair ():Promise<{
     return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey }
 }
 
+// Helper function to generate X25519 key pairs
+async function generateX25519KeyPair ():Promise<{
+    publicKey: CryptoKey,
+    privateKey: CryptoKey
+}> {
+    const keyPair = await webcrypto.subtle.generateKey(
+        { name: 'X25519' },
+        true,  // extractable
+        ['deriveKey']
+    ) as CryptoKeyPair
+    return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey }
+}
+
+// Helper to generate complete X3DH keys
+async function generateX3DHKeys (): Promise<X3DHKeys> {
+    const identityKeys = await generateEd25519KeyPair()
+    const preKeys = await generateX25519KeyPair()
+
+    return {
+        identitySecret: identityKeys.privateKey,
+        identityPublic: identityKeys.publicKey,
+        preKeySecret: preKeys.privateKey,
+        preKeyPublic: preKeys.publicKey
+    }
+}
+
 // Helper function to get raw bytes from a CryptoKey
 async function exportKeyAsBytes (key:CryptoKey):Promise<Uint8Array<ArrayBuffer>> {
     const rawKey = await webcrypto.subtle.exportKey('raw', key)
@@ -23,54 +49,40 @@ async function exportKeyAsBytes (key:CryptoKey):Promise<Uint8Array<ArrayBuffer>>
 }
 
 test('generate one time keys', async t => {
-    const { privateKey } = await generateEd25519KeyPair()
-    const x3dh = new X3DH()
-    const response = await x3dh.generateOneTimeKeys(privateKey, 4)
+    const keys = await generateX3DHKeys()
+    const x3dh = new X3DH(keys, 'test-user')
+    const response = await x3dh.generateOneTimeKeys(4)
     t.equal(response.bundle.length, 4, '4 bundle length')
     t.equal(response.signature.length, 128, 'should be 128 bits')
 })
 
 test('x3dh Handshake with one-time keys', async t => {
-    t.plan(26)
+    t.plan(27)
 
-    // 1. Generate identity keys
-    const fox_keys = await generateEd25519KeyPair()
-    const fox_sk = fox_keys.privateKey
-    const fox_pk = fox_keys.publicKey
-    const wolf_keys = await generateEd25519KeyPair()
-    const wolf_sk = wolf_keys.privateKey
-    const wolf_pk = wolf_keys.publicKey
+    // 1. Generate keys for both users
+    const fox_keys = await generateX3DHKeys()
+    const wolf_keys = await generateX3DHKeys()
 
-    // 2. Instantiate object with same config (defaults)
-    const fox_x3dh = new X3DH()
-    const wolf_x3dh = new X3DH()
-    await fox_x3dh.identityKeyManager.setIdentityKeypair(fox_sk, fox_pk)
-    await fox_x3dh.setIdentityString('fox')
-    t.equal(
-        await fox_x3dh.identityKeyManager.getMyIdentityString(),
-        'fox'
-    )
-    await wolf_x3dh.identityKeyManager.setIdentityKeypair(wolf_sk, wolf_pk)
-    await wolf_x3dh.setIdentityString('wolf')
-    t.equal(
-        await wolf_x3dh.identityKeyManager.getMyIdentityString(),
-        'wolf'
-    )
+    // 2. Instantiate X3DH objects with keys
+    const fox_x3dh = new X3DH(fox_keys, 'fox')
+    const wolf_x3dh = new X3DH(wolf_keys, 'wolf')
 
-    // 3. Generate a pre-key for each.
-    const fox_pre = await fox_x3dh.identityKeyManager.getPreKeypair()
-    t.ok(fox_pre, 'should generate fox pre-key')
-    const wolf_pre = await wolf_x3dh.identityKeyManager.getPreKeypair()
+    t.equal(fox_x3dh.identityString, 'fox')
+    t.equal(wolf_x3dh.identityString, 'wolf')
+
+    // 3. Pre-keys are already in the keys objects
+    t.ok(fox_keys.preKeyPublic, 'should have fox pre-key')
+    t.ok(wolf_keys.preKeyPublic, 'should have wolf pre-key')
 
     // 4. Generate some one-time keys
-    const fox_bundle = await fox_x3dh.generateOneTimeKeys(fox_sk, 3)
+    const fox_bundle = await fox_x3dh.generateOneTimeKeys(3)
     t.ok(fox_bundle, 'should generate a fox bundle')
-    const wolf_bundle = await wolf_x3dh.generateOneTimeKeys(wolf_sk, 3)
+    const wolf_bundle = await wolf_x3dh.generateOneTimeKeys(3)
 
     const wolfResponse = async () => {
-        const sig = await signBundle(wolf_sk, [wolf_pre.preKeyPublic])
-        const wolfPkBytes = await exportKeyAsBytes(wolf_pk)
-        const preKeyBytes = await exportKeyAsBytes(wolf_pre.preKeyPublic)
+        const sig = await signBundle(wolf_keys.identitySecret, [wolf_keys.preKeyPublic])
+        const wolfPkBytes = await exportKeyAsBytes(wolf_keys.identityPublic)
+        const preKeyBytes = await exportKeyAsBytes(wolf_keys.preKeyPublic)
         return {
             IdentityKey: arrayBufferToHex(toArrayBuffer(wolfPkBytes)),
             SignedPreKey: {
