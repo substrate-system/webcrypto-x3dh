@@ -1,5 +1,6 @@
 import { test } from '@substrate-system/tapzero'
 import { signBundle, X3DH } from '../src/index.js'
+import { toArrayBuffer } from '../src/util.js'
 
 // Helper function to generate Ed25519 key pairs
 async function generateEd25519KeyPair ():Promise<{
@@ -77,10 +78,10 @@ test('x3dh Handshake with one-time keys', async t => {
         const wolfPkBytes = await exportKeyAsBytes(wolf_pk)
         const preKeyBytes = await exportKeyAsBytes(wolf_pre.preKeyPublic)
         return {
-            IdentityKey: arrayBufferToHex(wolfPkBytes),
+            IdentityKey: arrayBufferToHex(toArrayBuffer(wolfPkBytes)),
             SignedPreKey: {
-                Signature: arrayBufferToHex(sig),
-                PreKey: arrayBufferToHex(preKeyBytes)
+                Signature: arrayBufferToHex(toArrayBuffer(sig)),
+                PreKey: arrayBufferToHex(toArrayBuffer(preKeyBytes))
             },
             OneTimeKey: wolf_bundle.bundle[0]
         }

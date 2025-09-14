@@ -7,6 +7,13 @@ import type { CryptographyKey } from './symmetric.js'
 
 export type Keypair = {secretKey:CryptoKey, publicKey:CryptoKey};
 
+export function toArrayBuffer (u8:Uint8Array):ArrayBuffer {
+    if (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength) {
+        return u8.buffer as ArrayBuffer
+    }
+    return u8.slice().buffer
+}
+
 /**
  * Concatenate some number of Uint8Array objects
  *
@@ -108,7 +115,7 @@ export async function generateBundle (
 export async function signBundle (
     signingKey:CryptoKey,
     publicKeys:CryptoKey[]
-): Promise<Uint8Array> {
+):Promise<Uint8Array> {
     try {
         // Validate the signing key
         if (!signingKey || typeof signingKey !== 'object') {
