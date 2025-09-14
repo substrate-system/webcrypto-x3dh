@@ -1,5 +1,5 @@
 {
-  "name": "@substrate-system/x3dh",
+  "name": "@substrate-system/webcrypto-x3dh",
   "version": "0.4.7",
   "files": [
     "./dist/*"
