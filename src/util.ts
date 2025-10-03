@@ -92,8 +92,8 @@ export async function generateKeyPair ():Promise<Keypair> {
 /**
  * Generate a bundle of keypairs.
  *
- * @param {number} preKeyCount
- * @returns {Keypair[]}
+ * @param {number} [preKeyCount=100]
+ * @returns {Promise<Keypair[]>}
  */
 export async function generateBundle (
     preKeyCount:number = 100

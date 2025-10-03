@@ -55,7 +55,8 @@
     "markdown-toc": "^1.2.0",
     "tap-spec": "^5.0.0",
     "typedoc": "^0.28.12",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "uint8arrays": "^5.1.0"
   },
   "contributors": [
     "nichoth <nichoth@nichoth.com> (https://nichoth.com)"

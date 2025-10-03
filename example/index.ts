@@ -6,8 +6,9 @@
 
 import { EccKeys } from '@substrate-system/keys/ecc'
 import { webcrypto } from '@substrate-system/one-webcrypto'
-import { X3DH, signBundle } from '../src/index.js'
 import Debug from '@substrate-system/debug'
+import { toString } from 'uint8arrays'
+import { X3DH, signBundle } from '../src/index.js'
 
 window.localStorage.setItem('DEBUG', 'example,example:*')
 const debug = Debug('example')
@@ -31,14 +32,6 @@ async function createX3DHKeys (eccKeys:EccKeys) {
     }
 }
 
-// Helper to export key as hex
-async function keyToHex (key) {
-    const raw = await webcrypto.subtle.exportKey('raw', key)
-    return Array.from(new Uint8Array(raw))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-}
-
 async function example () {
     console.log('X3DH + keys Example')
     console.log('================================================\n')
@@ -53,7 +46,7 @@ async function example () {
     debug(`   Alice DID: ${aliceKeys.DID}`)
     debug(`   Bob DID: ${bobKeys.DID}\n`)
 
-    // 2. Convert to X3DH format
+    // 2. Create X3DH format key packages
     console.log('2. Converting keys to X3DH format...')
     const aliceX3DHKeys = await createX3DHKeys(aliceKeys)
     const bobX3DHKeys = await createX3DHKeys(bobKeys)
@@ -68,16 +61,19 @@ async function example () {
     const aliceBundle = await aliceX3DH.generateOneTimeKeys(5)
     const bobBundle = await bobX3DH.generateOneTimeKeys(5)
 
-    console.log(`   Alice generated ${aliceBundle.bundle.length} one-time keys`)
-    console.log(`   Bob generated ${bobBundle.bundle.length} one-time keys\n`)
+    debug(`   Alice generated ${aliceBundle.bundle.length} one-time keys`)
+    debug(`   Bob generated ${bobBundle.bundle.length} one-time keys\n`)
 
     // 5. Simulate server response for key exchange
     console.log('5. Performing X3DH handshake...')
     const bobResponse = async () => {
-        const sig = await signBundle(bobX3DHKeys.identitySecret, [bobX3DHKeys.preKeyPublic])
+        const sig = await signBundle(
+            bobX3DHKeys.identitySecret,
+            [bobX3DHKeys.preKeyPublic]
+        )
         const identityKeyHex = await keyToHex(bobX3DHKeys.identityPublic)
         const preKeyHex = await keyToHex(bobX3DHKeys.preKeyPublic)
-        const sigHex = Array.from(new Uint8Array(sig))
+        const sigHex = Array.from(sig)
             .map(b => b.toString(16).padStart(2, '0'))
             .join('')
 
@@ -93,15 +89,19 @@ async function example () {
 
     // 6. Alice initiates communication with Bob
     const initialMessage = 'Hello Bob! This message uses X3DH key agreement.'
-    const handshake = await aliceX3DH.initSend(bobKeys.DID, bobResponse, initialMessage)
+    const handshake = await aliceX3DH.initSend(
+        bobKeys.DID,
+        bobResponse,
+        initialMessage
+    )
 
-    console.log('Alice sent initial encrypted message')
+    debug('Alice sent initial encrypted message')
 
     // 7. Bob receives and decrypts
-    const [sender, decryptedMessage] = await bobX3DH.initRecv(handshake)
+    const [sender, decryptedMessage] = await bobX3DH.initReceive(handshake)
 
-    console.log(`Bob received message from: ${sender}`)
-    console.log(`Decrypted: "${decryptedMessage}"\n`)
+    debug(`Bob received message from: ${sender}`)
+    debug(`Decrypted: "${decryptedMessage}"\n`)
 
     // 8. Ongoing secure communication
     console.log('6. Testing ongoing secure communication...')
@@ -114,17 +114,16 @@ async function example () {
     console.log(`   Bob → Alice: "${aliceReceived}"`)
 
     // Alice responds
-    const aliceResponse = 'Great! Our identities are managed by @substrate-system/keys.'
+    const aliceResponse = 'Great! Our identities are managed ' +
+        'by @substrate-system/keys.'
     const encryptedResponse = await aliceX3DH.encryptNext(bobKeys.DID, aliceResponse)
     const bobReceived = await bobX3DH.decryptNext(aliceKeys.DID, encryptedResponse)
 
-    console.log(`   Alice → Bob: "${bobReceived}"\n`)
+    debug(`   Alice → Bob: "${bobReceived}"\n`)
 
     // 9. Demonstrate key management features
     console.log('7. Key management features:')
     console.log('   • Identity keys are persisted automatically (browser only)')
-    console.log('   • DIDs provide consistent identity across sessions')
-    console.log('   • X3DH handles the cryptographic protocol')
     console.log('   • @substrate-system/keys handles key persistence')
     console.log('   • Session keys are managed separately from identity keys\n')
 
@@ -132,7 +131,7 @@ async function example () {
     console.log('\nNOTE: In Node.js environment, use EccKeys.create(true) for' +
         ' session-only keys.')
     console.log('      In browser environment, omit the parameter for ' +
-        'automatic persistence.')
+        'persistence.')
 
     // Clean up (browser only)
     if (typeof window !== 'undefined') {
@@ -148,3 +147,9 @@ if (typeof window !== 'undefined') {
 }
 
 export { example }
+
+// Helper
+async function keyToHex (key):Promise<string> {
+    const raw = await webcrypto.subtle.exportKey('raw', key)
+    return toString(new Uint8Array(raw), 'hex')
+}

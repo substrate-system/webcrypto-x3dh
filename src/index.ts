@@ -191,9 +191,10 @@ export class X3DH {
      * Generates and signs a bundle of one-time keys.
      * Stores them locally for later use.
      *
-     * @param {number} numKeys
+     * @param {number} [numKeys=100]
+     * @returns {Promise<SignedBundle>}
      */
-    async generateOneTimeKeys (numKeys: number = 100): Promise<SignedBundle> {
+    async generateOneTimeKeys (numKeys:number = 100):Promise<SignedBundle> {
         try {
             const bundle = await generateBundle(numKeys)
             const publicKeys = bundle.map(x => x.publicKey)
@@ -473,7 +474,7 @@ export class X3DH {
      * @param {InitSenderInfo} req
      * @returns {(string|Uint8Array)[]}
      */
-    async initRecv (req: InitSenderInfo): Promise<(string | Uint8Array)[]> {
+    async initReceive (req: InitSenderInfo): Promise<(string | Uint8Array)[]> {
         const identityPublic = this.keys.identityPublic
         const preKeySecret = this.keys.preKeySecret
         const recipientIdentity = this.identityString
