@@ -105,11 +105,15 @@ const x3dhKeys = X3DH.X3DHKeys(aliceKeys, preKeyPair)
 
 // 4. Initialize X3DH with keys and identity string
 const x3dh = new X3DH(x3dhKeys, aliceKeys.DID)
+
+// 5. Generate one-time keys for others to use in key exchange
+const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
+// Upload oneTimeKeyBundle to your server
 ```
 
 ### Constructor Options
 
-You can customize the X3DH implementation:
+Can pass in everything:
 
 ```ts
 const x3dh = new X3DH(
@@ -136,19 +140,19 @@ const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
 // during key exchange
 
 // Initiate communication (sender side)
-const firstEncrypted = await x3dh.initSend(
+const firstEncryptedMsg = await x3dh.initSend(
     'recipient-did-string',
-    serverApiCallFunc,
+    serverApiCall,
     firstMessage
 )
 ```
 
-The `serverApiCallFunc` parameter should be a function that sends a request to
+The `serverApiCall` parameter should be a function that sends a request to
 the server to obtain the identity key, signed pre-key, and optional one-time
 key for the handshake.
 
 See the definition of the `InitClientFunction` type in
-[src/index.ts](https://github.com/substrate-system/webcrypto-x3dh/blob/e0a3a1a342317de116ee41f73072448a8218da5c/src/index.ts#L134).
+[src/index.ts](./src/index.ts#L130).
 
 ```ts
 type InitClientFunction = (id:string)=>Promise<InitServerInfo>
@@ -183,7 +187,7 @@ Session keys are automatically managed and ratcheted for forward secrecy.
 Session keys are automatically managed with the following features:
 
 - **IndexedDB Storage**: In browsers, session keys persist across page reloads
-- **Memory Fallback**: In Node.js or environments without IndexedDB, uses
+- **Memory Fallback**: In Node.js, or environments without IndexedDB, uses
   memory storage
 - **Forward Secrecy**: Keys are ratcheted after each message using SHA-256
 - **Automatic Cleanup**: Use `destroySessionKey(participantId)` to clean
