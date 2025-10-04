@@ -23,12 +23,20 @@ Thanks `@soatok` for working in public.
 
 <!-- toc -->
 
+- [Install](#install)
 - [What's This?](#whats-this)
 - [Platform Independence](#platform-independence)
   * [Improved Browser Compatibility (v0.4.0)](#improved-browser-compatibility-v040)
-  * [Key Storage](#key-storage)
-- [Installation](#installation)
+  * [Key Management](#key-management)
 - [Usage](#usage)
+  * [Basics with `@substrate-system/keys`](#basics-with-substrate-systemkeys)
+  * [Constructor Options](#constructor-options)
+  * [Performing X3DH Key Exchange](#performing-x3dh-key-exchange)
+  * [Receiving and Ongoing Communication](#receiving-and-ongoing-communication)
+  * [Session Key Management](#session-key-management)
+- [API Reference](#api-reference)
+  * [Types](#types)
+  * [Main Classes](#main-classes)
 - [Should I Use This?](#should-i-use-this)
 
 <!-- tocstop -->
