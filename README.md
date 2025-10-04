@@ -29,6 +29,13 @@ the X3DH handshake are stored - your identity keys should be managed separately,
 e.g. by `@substrate-system/keys`. One-time keys are kept in memory only and
 not persisted.
 
+Session keys are saved to IndexedDB as
+[non-extractable](https://developer.mozilla.org/en-US/docs/Web/API/CryptoKey/extractable)
+keys &mdash; JavaScript cannot
+read the raw bytes. Keys can still be used for encryption/decryption and
+derivation operations via the webcrypto API.
+
+
 ## fork
 
 This is a fork of [soatok/rawr-x3dh](https://github.com/soatok/rawr-x3dh).

@@ -80,19 +80,22 @@ export class CryptographyKey {
         salt:Uint8Array,
         info:Uint8Array
     ):Promise<CryptographyKey> {
-        const derivedKey = await globalThis.crypto.subtle.deriveKey(
-            {
-                name: 'HKDF',
-                hash: 'SHA-256',
-                salt,
-                info
-            },
-            this.key,
-            'HKDF',
-            false, // non-extractable
-            ['deriveBits', 'deriveKey']
+        // Derive bits and re-import as HKDF key
+        const derivedBits = await this.deriveBits(salt, info, 32)
+        return await CryptographyKey.fromBytes(derivedBits)
+    }
+
+    /**
+     * Get raw bytes from this key for intermediate operations like concatenation.
+     * Uses deriveBits with empty salt/info to extract the key material.
+     * This is needed for X3DH handshake where multiple DH secrets are concatenated.
+     */
+    async getBytes (length:number = 32):Promise<Uint8Array> {
+        return await this.deriveBits(
+            new Uint8Array(0), // empty salt
+            new Uint8Array(0), // empty info
+            length
         )
-        return new CryptographyKey(derivedKey)
     }
 }
 
@@ -358,45 +361,32 @@ function arrayBuffersEqual (buf1:ArrayBuffer, buf2:ArrayBuffer):boolean {
 }
 
 /**
- * Derive an encryption key and a commitment hash using HMAC-SHA256.
+ * Derive an encryption key and a commitment hash using HKDF.
  *
  * @param {CryptographyKey} key
  * @param {Uint8Array} nonce
- * @returns {{encKey: CryptographyKey, commitment: Uint8Array}}
+ * @returns {{encKeyBytes: Uint8Array, commitment: Uint8Array}}
  */
 export async function deriveKeys (
     key:CryptographyKey,
     nonce:Uint8Array<ArrayBuffer>
 ):Promise<{
-    encKey:CryptographyKey;
+    encKeyBytes:Uint8Array<ArrayBuffer>;
     commitment:Uint8Array<ArrayBuffer>;
 }> {
-    // Get HMAC key for deriving encryption key
-    const keyBuffer = key.getBuffer()
-    const hmacKey = await globalThis.crypto.subtle.importKey(
-        'raw',
-        keyBuffer,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
+    // Derive encryption key using HKDF
+    const encKeyBytes = await key.deriveBits(
+        nonce,
+        PREFIX_ENCRYPTION_KEY,
+        32
     )
 
-    // Derive encryption key
-    const encKeyData = await globalThis.crypto.subtle.sign(
-        'HMAC',
-        hmacKey,
-        concat(PREFIX_ENCRYPTION_KEY, nonce)
+    // Derive commitment using HKDF
+    const commitment = await key.deriveBits(
+        nonce,
+        PREFIX_COMMIT_KEY,
+        32
     )
 
-    // Derive commitment
-    const commitmentData = await globalThis.crypto.subtle.sign(
-        'HMAC',
-        hmacKey,
-        concat(PREFIX_COMMIT_KEY, nonce)
-    )
-
-    const encKey = new CryptographyKey(new Uint8Array(encKeyData).slice(0, 32))
-    const commitment = new Uint8Array(commitmentData).slice(0, 32)
-
-    return { encKey, commitment }
+    return { encKeyBytes, commitment }
 }

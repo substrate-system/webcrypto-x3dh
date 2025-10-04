@@ -89,7 +89,7 @@ async function scalarMult (
 
     // Export the key to get the raw shared secret
     const sharedSecret = await webcrypto.subtle.exportKey('raw', derivedKey)
-    return new CryptographyKey(new Uint8Array(sharedSecret))
+    return await CryptographyKey.fromBytes(new Uint8Array(sharedSecret))
 }
 
 // No need for Ed25519 to X25519 conversion
@@ -319,24 +319,24 @@ export class X3DH {
         if (res.OneTimeKey) {
             const otk = await importX25519PublicKey(res.OneTimeKey)
             const DH4 = await scalarMult(ephSecret, otk)
-            SK = new CryptographyKey(
+            SK = await CryptographyKey.fromBytes(
                 new Uint8Array(await this.kdf(
                     concat(
-                        DH1.getBuffer(),
-                        DH2.getBuffer(),
-                        DH3.getBuffer(),
-                        DH4.getBuffer()
+                        await DH1.getBytes(),
+                        await DH2.getBytes(),
+                        await DH3.getBytes(),
+                        await DH4.getBytes()
                     )
                 ))
             )
             await wipe(DH4)
         } else {
-            SK = new CryptographyKey(
+            SK = await CryptographyKey.fromBytes(
                 new Uint8Array(await this.kdf(
                     concat(
-                        DH1.getBuffer(),
-                        DH2.getBuffer(),
-                        DH3.getBuffer()
+                        await DH1.getBytes(),
+                        await DH2.getBytes(),
+                        await DH3.getBytes()
                     )
                 ))
             )
@@ -460,24 +460,24 @@ export class X3DH {
         if (req.OneTimeKey) {
             const otk = await this.fetchAndWipeOneTimeSecretKey(req.OneTimeKey)
             const DH4 = await scalarMult(otk, ephemeral)
-            SK = new CryptographyKey(
+            SK = await CryptographyKey.fromBytes(
                 new Uint8Array(await this.kdf(
                     concat(
-                        DH1.getBuffer(),
-                        DH2.getBuffer(),
-                        DH3.getBuffer(),
-                        DH4.getBuffer()
+                        await DH1.getBytes(),
+                        await DH2.getBytes(),
+                        await DH3.getBytes(),
+                        await DH4.getBytes()
                     )
                 ))
             )
             await wipe(DH4)
         } else {
-            SK = new CryptographyKey(
+            SK = await CryptographyKey.fromBytes(
                 new Uint8Array(await this.kdf(
                     concat(
-                        DH1.getBuffer(),
-                        DH2.getBuffer(),
-                        DH3.getBuffer()
+                        await DH1.getBytes(),
+                        await DH2.getBytes(),
+                        await DH3.getBytes()
                     )
                 ))
             )

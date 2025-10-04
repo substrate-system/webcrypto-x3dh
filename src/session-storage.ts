@@ -10,8 +10,8 @@ type SessionKeys = {
 }
 
 type SerializedSessionKeys = {
-    sending:number[],
-    receiving:number[]
+    sending:CryptoKey,
+    receiving:CryptoKey
 }
 
 /**
@@ -116,54 +116,35 @@ export class IndexedDBSessionManager {
     ):Promise<void> {
         try {
             const sessionKeys:SessionKeys = {} as SessionKeys
-            const keyBuffer = key.getBuffer()
 
             if (recipient) {
                 // We are the recipient: they send to us, we receive from them
-                const sendingKeyMaterial = await globalThis.crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode(
-                        'recipient_sending' + arrayBufferToHex(keyBuffer)
-                    )
-                )
-                sessionKeys.sending = new CryptographyKey(
-                    new Uint8Array(sendingKeyMaterial)
+                sessionKeys.sending = await key.deriveKey(
+                    new Uint8Array(0),
+                    new TextEncoder().encode('recipient_sending')
                 )
 
-                const receivingKeyMaterial = await globalThis.crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode(
-                        'sender_sending' + arrayBufferToHex(keyBuffer)
-                    )
-                )
-                sessionKeys.receiving = new CryptographyKey(
-                    new Uint8Array(receivingKeyMaterial)
+                sessionKeys.receiving = await key.deriveKey(
+                    new Uint8Array(0),
+                    new TextEncoder().encode('sender_sending')
                 )
             } else {
                 // We are the sender: we send to them, they receive from us
-                const receivingKeyMaterial = await globalThis.crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode('recipient_sending' +
-                        arrayBufferToHex(keyBuffer))
-                )
-                sessionKeys.receiving = new CryptographyKey(
-                    new Uint8Array(receivingKeyMaterial)
+                sessionKeys.receiving = await key.deriveKey(
+                    new Uint8Array(0),
+                    new TextEncoder().encode('recipient_sending')
                 )
 
-                const sendingKeyMaterial = await globalThis.crypto.subtle.digest(
-                    'SHA-256',
-                    new TextEncoder().encode('sender_sending' +
-                        arrayBufferToHex(keyBuffer))
-                )
-                sessionKeys.sending = new CryptographyKey(
-                    new Uint8Array(sendingKeyMaterial)
+                sessionKeys.sending = await key.deriveKey(
+                    new Uint8Array(0),
+                    new TextEncoder().encode('sender_sending')
                 )
             }
 
-            // Store serialized keys in IndexedDB
+            // Store CryptoKey objects directly in IndexedDB
             const serializedKeys:SerializedSessionKeys = {
-                sending: Array.from(sessionKeys.sending.getBuffer()),
-                receiving: Array.from(sessionKeys.receiving.getBuffer())
+                sending: sessionKeys.sending.getCryptoKey(),
+                receiving: sessionKeys.receiving.getCryptoKey()
             }
 
             const db = await this.openDB()
@@ -207,20 +188,21 @@ export class IndexedDBSessionManager {
                 throw new Error('Session key does not exist for client: ' + id)
             }
 
-            // Deserialize keys
+            // Wrap CryptoKey objects in CryptographyKey
             const sessionKeys:SessionKeys = {
-                sending: new CryptographyKey(new Uint8Array(serializedKeys.sending)),
-                receiving: new CryptographyKey(new Uint8Array(serializedKeys.receiving))
+                sending: CryptographyKey.fromCryptoKey(serializedKeys.sending),
+                receiving: CryptographyKey.fromCryptoKey(serializedKeys.receiving)
             }
 
             // Perform symmetric ratchet and get encryption key
-            let keys:CryptographyKey[]
+            let nextKey:CryptographyKey
+            let encryptionKey:CryptographyKey
             if (recipient) {
-                keys = await this.symmetricRatchet(sessionKeys.receiving)
-                sessionKeys.receiving = keys[0]
+                [nextKey, encryptionKey] = await this.symmetricRatchet(sessionKeys.receiving)
+                sessionKeys.receiving = nextKey
             } else {
-                keys = await this.symmetricRatchet(sessionKeys.sending)
-                sessionKeys.sending = keys[0]
+                [nextKey, encryptionKey] = await this.symmetricRatchet(sessionKeys.sending)
+                sessionKeys.sending = nextKey
             }
 
             // Second transaction: write updated keys
@@ -229,8 +211,8 @@ export class IndexedDBSessionManager {
                 const store = tx.objectStore(this.sessionStore)
 
                 const updatedSerializedKeys:SerializedSessionKeys = {
-                    sending: Array.from(sessionKeys.sending.getBuffer()),
-                    receiving: Array.from(sessionKeys.receiving.getBuffer())
+                    sending: sessionKeys.sending.getCryptoKey(),
+                    receiving: sessionKeys.receiving.getCryptoKey()
                 }
 
                 await new Promise<void>((resolve, reject) => {
@@ -240,31 +222,32 @@ export class IndexedDBSessionManager {
                 })
             }
 
-            return keys[1] // Return encryption key
+            return encryptionKey
         } catch (error) {
             throw new Error(`Failed to get encryption key for ${id}: ${error}`)
         }
     }
 
     /**
-     * Symmetric ratchet implementation using SHA-256.
+     * Symmetric ratchet implementation using HKDF.
      * Returns [nextRatchetKey, encryptionKey].
      */
     private async symmetricRatchet (
         inKey:CryptographyKey
     ):Promise<CryptographyKey[]> {
-        const keyBuffer = inKey.getBuffer()
-        const fullhash = await globalThis.crypto.subtle.digest(
-            'SHA-256',
-            new TextEncoder().encode('Symmetric Ratchet' +
-                arrayBufferToHex(keyBuffer))
+        // Derive next ratchet key
+        const nextRatchetKey = await inKey.deriveKey(
+            new Uint8Array(0),
+            new TextEncoder().encode('SymmetricRatchet-NextKey')
         )
 
-        const hashBytes = new Uint8Array(fullhash)
-        return [
-            new CryptographyKey(hashBytes.slice(0, 16)), // First 16 bytes for next key
-            new CryptographyKey(hashBytes.slice(16, 32)), // Next 16 bytes for encryption
-        ]
+        // Derive encryption key
+        const encryptionKey = await inKey.deriveKey(
+            new Uint8Array(0),
+            new TextEncoder().encode('SymmetricRatchet-EncKey')
+        )
+
+        return [nextRatchetKey, encryptionKey]
     }
 
     /**
@@ -272,34 +255,11 @@ export class IndexedDBSessionManager {
      */
     async destroySessionKey (id:string):Promise<void> {
         try {
-            // Clean up in-memory keys first
             const db = await this.openDB()
-            let tx = db.transaction([this.sessionStore], 'readonly')
-            const store = tx.objectStore(this.sessionStore)
-
-            const serializedKeys =
-            await new Promise<SerializedSessionKeys|null>((resolve, reject) => {
-                const request = store.get(id)
-                request.onerror = () => reject(request.error)
-                request.onsuccess = () => resolve(request.result)
-            })
-
-            if (serializedKeys) {
-                const sessionKeys:SessionKeys = {
-                    sending: new CryptographyKey(
-                        new Uint8Array(serializedKeys.sending)
-                    ),
-                    receiving: new CryptographyKey(
-                        new Uint8Array(serializedKeys.receiving)
-                    )
-                }
-
-                await wipe(sessionKeys.sending)
-                await wipe(sessionKeys.receiving)
-            }
 
             // Remove from IndexedDB
-            tx = db.transaction(
+            // Note: CryptoKey objects are non-extractable, so no explicit wiping needed
+            const tx = db.transaction(
                 [this.sessionStore, this.assocDataStore],
                 'readwrite'
             )
@@ -349,48 +309,33 @@ export class MemorySessionManager {
         key:CryptographyKey,
         recipient?:boolean
     ):Promise<void> {
-        this.sessions.set(id, {} as SessionKeys)
-        const keyBuffer = key.getBuffer()
+        const sessionKeys = {} as SessionKeys
 
         if (recipient) {
-            const sendingKeyMaterial = await globalThis.crypto.subtle.digest(
-                'SHA-256',
-                new TextEncoder().encode(
-                    'recipient_sending' + arrayBufferToHex(keyBuffer)
-                )
-            )
-            this.sessions.get(id)!.sending = new CryptographyKey(
-                new Uint8Array(sendingKeyMaterial)
+            // We are the recipient: they send to us, we receive from them
+            sessionKeys.sending = await key.deriveKey(
+                new Uint8Array(0),
+                new TextEncoder().encode('recipient_sending')
             )
 
-            const receivingKeyMaterial = await globalThis.crypto.subtle.digest(
-                'SHA-256',
-                new TextEncoder().encode(
-                    'sender_sending' + arrayBufferToHex(keyBuffer)
-                )
-            )
-            this.sessions.get(id)!.receiving = new CryptographyKey(
-                new Uint8Array(receivingKeyMaterial)
+            sessionKeys.receiving = await key.deriveKey(
+                new Uint8Array(0),
+                new TextEncoder().encode('sender_sending')
             )
         } else {
-            const receivingKeyMaterial = await globalThis.crypto.subtle.digest(
-                'SHA-256',
-                new TextEncoder().encode('recipient_sending' +
-                    arrayBufferToHex(keyBuffer))
-            )
-            this.sessions.get(id)!.receiving = new CryptographyKey(
-                new Uint8Array(receivingKeyMaterial)
+            // We are the sender: we send to them, they receive from us
+            sessionKeys.receiving = await key.deriveKey(
+                new Uint8Array(0),
+                new TextEncoder().encode('recipient_sending')
             )
 
-            const sendingKeyMaterial = await globalThis.crypto.subtle.digest(
-                'SHA-256',
-                new TextEncoder().encode('sender_sending' +
-                    arrayBufferToHex(keyBuffer))
-            )
-            this.sessions.get(id)!.sending = new CryptographyKey(
-                new Uint8Array(sendingKeyMaterial)
+            sessionKeys.sending = await key.deriveKey(
+                new Uint8Array(0),
+                new TextEncoder().encode('sender_sending')
             )
         }
+
+        this.sessions.set(id, sessionKeys)
     }
 
     async getEncryptionKey (
@@ -403,43 +348,36 @@ export class MemorySessionManager {
         }
 
         if (recipient) {
-            const keys = await this.symmetricRatchet(session.receiving)
-            session.receiving = keys[0]
-            return keys[1]
+            const [nextKey, encryptionKey] = await this.symmetricRatchet(session.receiving)
+            session.receiving = nextKey
+            return encryptionKey
         } else {
-            const keys = await this.symmetricRatchet(session.sending)
-            session.sending = keys[0]
-            return keys[1]
+            const [nextKey, encryptionKey] = await this.symmetricRatchet(session.sending)
+            session.sending = nextKey
+            return encryptionKey
         }
     }
 
     private async symmetricRatchet (
         inKey:CryptographyKey
     ):Promise<CryptographyKey[]> {
-        const keyBuffer = inKey.getBuffer()
-        const fullhash = await globalThis.crypto.subtle.digest(
-            'SHA-256',
-            new TextEncoder().encode('Symmetric Ratchet' +
-                arrayBufferToHex(keyBuffer))
+        // Derive next ratchet key
+        const nextRatchetKey = await inKey.deriveKey(
+            new Uint8Array(0),
+            new TextEncoder().encode('SymmetricRatchet-NextKey')
         )
 
-        const hashBytes = new Uint8Array(fullhash)
-        return [
-            new CryptographyKey(hashBytes.slice(0, 16)),
-            new CryptographyKey(hashBytes.slice(16, 32)),
-        ]
+        // Derive encryption key
+        const encryptionKey = await inKey.deriveKey(
+            new Uint8Array(0),
+            new TextEncoder().encode('SymmetricRatchet-EncKey')
+        )
+
+        return [nextRatchetKey, encryptionKey]
     }
 
     async destroySessionKey (id:string):Promise<void> {
-        const session = this.sessions.get(id)
-        if (!session) return
-
-        if (session.sending) {
-            await wipe(session.sending)
-        }
-        if (session.receiving) {
-            await wipe(session.receiving)
-        }
+        // Non-extractable keys don't need explicit wiping
         this.sessions.delete(id)
     }
 }

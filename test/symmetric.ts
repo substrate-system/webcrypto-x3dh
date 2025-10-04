@@ -11,9 +11,9 @@ test('Key derivation', async t => {
     // Create a test input using Web Crypto API
     const messageBytes = new TextEncoder().encode('Dhole fursonas rule <3')
     const hash = await globalThis.crypto.subtle.digest('SHA-256', messageBytes)
-    const testInput = new CryptographyKey(new Uint8Array(hash))
-    const { encKey, commitment } = await deriveKeys(testInput, new Uint8Array(24))
-    const test1: string = arrayBufferToHex(encKey.getBuffer())
+    const testInput = await CryptographyKey.fromBytes(new Uint8Array(hash))
+    const { encKeyBytes, commitment } = await deriveKeys(testInput, new Uint8Array(24))
+    const test1: string = arrayBufferToHex(encKeyBytes)
     const test2: string = arrayBufferToHex(commitment)
     t.ok(!(test1 === test2), 'should return different outputs')
 
@@ -26,7 +26,7 @@ test('Key derivation', async t => {
 test('Symmetric Encryption / Decryption', async t => {
     // Generate a test key using Web Crypto API
     const keyMaterial = globalThis.crypto.getRandomValues(new Uint8Array(32))
-    const key = new CryptographyKey(keyMaterial)
+    const key = await CryptographyKey.fromBytes(keyMaterial)
 
     const plaintext = "Rawr x3 nuzzles how are you *pounces on you* you're so warm o3o *notices you have a bulge*"
     const encrypted = await encryptData(plaintext, key)
