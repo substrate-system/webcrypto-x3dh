@@ -174,8 +174,14 @@ export class X3DH {
     }
 
     static X3DHKeys (
-        idKeys:{ privateWriteKey, publicWriteKey },
-        preKeypair:{ privateKey, publicKey }
+        idKeys:{
+            privateWriteKey:Ed25519SecretKey,
+            publicWriteKey:Ed25519PublicKey
+        },
+        preKeypair:{
+            privateKey:X25519SecretKey,
+            publicKey:X25519PublicKey
+        }
     ):X3DHKeys {
         return {
             identitySecret: idKeys.privateWriteKey,
@@ -496,7 +502,7 @@ export class X3DH {
      * @param {InitSenderInfo} req
      * @returns {(string|Uint8Array)[]}
      */
-    async initReceive (req: InitSenderInfo): Promise<(string | Uint8Array)[]> {
+    async initReceive (req:InitSenderInfo):Promise<(string|Uint8Array)[]> {
         const identityPublic = this.keys.identityPublic
         const preKeySecret = this.keys.preKeySecret
         const recipientIdentity = this.identityString
