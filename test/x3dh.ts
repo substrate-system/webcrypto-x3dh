@@ -57,7 +57,7 @@ test('generate one time keys', async t => {
 })
 
 test('x3dh Handshake with one-time keys', async t => {
-    t.plan(27)
+    t.plan(9)
 
     // 1. Generate keys for both users
     const fox_keys = await generateX3DHKeys()
@@ -94,40 +94,21 @@ test('x3dh Handshake with one-time keys', async t => {
     }
 
     // 5. Do an initial handshake from fox->wolf
-    const message = 'hewwo UwU'
-    const sent = await fox_x3dh.initSend('wolf', wolfResponse, message)
+    const sendResult = await fox_x3dh.initSend('wolf', wolfResponse)
+
+    // Verify we got a shared secret
+    t.ok(sendResult.sharedSecret instanceof Uint8Array, 'should return shared secret')
+    t.equal(sendResult.sharedSecret.length, 32, 'shared secret should be 32 bytes')
 
     // 6. Pass the handshake to wolf->fox
-    const [sender, recv] = await wolf_x3dh.initReceive(sent)
-    t.equal(sender, 'fox', 'sender should be "fox"')
-    t.equal(recv.toString(), message, 'should decrypt the message')
+    const recvResult = await wolf_x3dh.initReceive(sendResult.handshakeData)
+    t.equal(recvResult.senderIdentity, 'fox', 'sender should be "fox"')
 
-    // Send and receive a few more:
-    for (let i = 0; i < 20; i++) {
-        try {
-            const plain = `OwO what's this? ${i}`
-            if ((i % 3) === 0) {
-                const cipher = await wolf_x3dh.encryptNext('fox', plain)
-                const decrypt = await fox_x3dh.decryptNext('wolf', cipher)
-                t.equal(
-                    decrypt.toString(),
-                    plain,
-                    `round ${i + 1}`
-                )
-            } else {
-                const cipher = await fox_x3dh.encryptNext('wolf', plain)
-                const decrypt = await wolf_x3dh.decryptNext('fox', cipher)
-                t.equal(
-                    decrypt.toString(),
-                    plain,
-                    `round ${i + 1}`
-                )
-            }
-        } catch (err) {
-            console.log('Failed at i = ' + i)
-            throw err
-        }
-    }
+    // Verify both sides have the same shared secret
+    t.ok(
+        arraysEqual(sendResult.sharedSecret, recvResult.sharedSecret),
+        'both sides should have the same shared secret'
+    )
 })
 
 // Helper function to convert bytes to hex string
@@ -135,4 +116,13 @@ function arrayBufferToHex (buffer:ArrayBuffer):string {
     return Array.from(new Uint8Array(buffer))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('')
+}
+
+// Helper to compare two Uint8Arrays
+function arraysEqual (a:Uint8Array, b:Uint8Array):boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false
+    }
+    return true
 }

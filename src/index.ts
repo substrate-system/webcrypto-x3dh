@@ -2,23 +2,13 @@
  * X3DH -- eXtended 3-way Diffie-Hellman
  *
  * Specification by Open Whisper Systems <https://signal.org/docs/specifications/x3dh/>
- * Powered by @substrate-system/keys
- *
- * Originally implemented by Soatok Dreamseeker <https://soatok.blog>
  */
-import { exportPublicKey } from '@substrate-system/keys/ecc'
 import { webcrypto } from '@substrate-system/one-webcrypto'
 import {
     CryptographyKey,
     type KeyDerivationFunction,
-    type SymmetricEncryptionInterface,
-    blakeKdf,
-    SymmetricCrypto
+    blakeKdf
 } from './symmetric.js'
-import {
-    type SessionKeyManagerInterface,
-    createSessionManager
-} from './session-storage.js'
 import {
     concat,
     generateKeyPair,
@@ -31,12 +21,12 @@ import {
 } from './util.js'
 
 // Type aliases for keys module equivalents
-type Ed25519SecretKey = CryptoKey
-type Ed25519PublicKey = CryptoKey
-type X25519SecretKey = CryptoKey
-type X25519PublicKey = CryptoKey
+export type Ed25519SecretKey = CryptoKey
+export type Ed25519PublicKey = CryptoKey
+export type X25519SecretKey = CryptoKey
+export type X25519PublicKey = CryptoKey
 
-// Helper functions for key import/export with keys module
+// Helper functions for key import/export
 async function importEd25519PublicKey (
     hexString:string
 ):Promise<Ed25519PublicKey> {
@@ -48,29 +38,33 @@ async function importEd25519PublicKey (
     }
 
     try {
+        // Try to import as Ed25519 key (structured format)
         return await webcrypto.subtle.importKey(
             'raw',
             keyBytes,
             { name: 'Ed25519' },
-            true,  // extractable for exporting identity keys
+            true,
             ['verify']
         )
-    } catch (error) {
-        throw new Error(`Failed to import Ed25519 public key: ${error}. Key size: ${keyBytes.byteLength} bytes, Hex: ${hexString}`)
+    } catch (e:unknown) {
+        throw new Error(`Failed to import Ed25519 public key: ${e instanceof Error ? e.message : String(e)}`)
     }
 }
 
-async function importX25519PublicKey (
-    hexString:string
-):Promise<X25519PublicKey> {
+async function importX25519PublicKey (hexString:string):Promise<X25519PublicKey> {
     const keyBytes = hexToArrayBuffer(hexString)
-    return await webcrypto.subtle.importKey(
-        'raw',
-        keyBytes,
-        { name: 'X25519' },
-        true,  // extractable so we can export for signing verification
-        []  // Node.js requires empty usage array for X25519 raw imports
-    )
+
+    try {
+        return await webcrypto.subtle.importKey(
+            'raw',
+            keyBytes,
+            { name: 'X25519' },
+            true,
+            []
+        )
+    } catch (e:unknown) {
+        throw new Error(`Failed to import X25519 public key: ${e instanceof Error ? e.message : String(e)}`)
+    }
 }
 
 // X25519 scalar multiplication using Web Crypto API (minimal for ECDH)
@@ -92,15 +86,8 @@ async function scalarMult (
     return await CryptographyKey.fromBytes(new Uint8Array(sharedSecret))
 }
 
-// No need for Ed25519 to X25519 conversion
-// Ed25519: Identity and signing
-// X25519: Key exchange (pre-keys, one-time keys, ephemeral keys)
-
 /**
- * Initial server info.
- *
- * Contains the information necessary to complete
- * the X3DH handshake from a sender's side.
+ * Type returned from the server when initiating a connection.
  */
 export type InitServerInfo = {
     IdentityKey:string;
@@ -111,39 +98,34 @@ export type InitServerInfo = {
     OneTimeKey?:string;
 };
 
+// No need for Ed25519 to X25519 conversion
+// Ed25519: Identity and signing
+// X25519: ECDH operations
+
+type InitClientFunction = (id:string)=>Promise<InitServerInfo>
+
 /**
- * Initial information about a sender
+ * Type sent from the sender to the recipient when initiating a connection.
  */
 export type InitSenderInfo = {
     Sender:string,
     IdentityKey:string,
-    PreKey:string,  // Sender's pre-key public for DH operations
+    PreKey:string,
     EphemeralKey:string,
     OneTimeKey?:string,
-    CipherText:string
-};
+}
 
 /**
- * Send a network request to the server to obtain the public keys needed
- * to complete the sender's handshake.
+ * Signed bundle of one-time keys.
  */
-export type InitClientFunction = (id:string)=>Promise<InitServerInfo>;
+export type SignedBundle = {
+    signature:string,
+    bundle:string[]
+}
 
 /**
- * Signed key bundle.
+ * X3DH key bundle.
  */
-export type SignedBundle = { signature:string, bundle:string[] };
-
-/**
- * Initialization information for receiving a handshake message.
- */
-type RecipientInitWithSK = {
-    IK:Ed25519PublicKey,
-    EK:X25519PublicKey,
-    SK:CryptographyKey,
-    OTK?:string
-};
-
 export type X3DHKeys = {
     identitySecret:Ed25519SecretKey
     identityPublic:Ed25519PublicKey
@@ -152,13 +134,27 @@ export type X3DHKeys = {
 }
 
 /**
+ * Result from initSend - includes shared secret
+ */
+export type InitSendResult = {
+    sharedSecret: Uint8Array
+    handshakeData: InitSenderInfo
+}
+
+/**
+ * Result from initReceive - includes shared secret and sender identity
+ */
+export type InitReceiveResult = {
+    sharedSecret: Uint8Array
+    senderIdentity: string
+}
+
+/**
  * X3DH implementation using Web Crypto API.
  * Keys are passed in instead of being managed internally.
  */
 export class X3DH {
-    encryptor:SymmetricEncryptionInterface
     kdf:KeyDerivationFunction
-    sessionKeyManager:SessionKeyManagerInterface
     keys:X3DHKeys
     identityString:string
     oneTimeKeys:Map<string, CryptoKey>
@@ -194,22 +190,12 @@ export class X3DH {
     constructor (
         keys:X3DHKeys,
         identityString:string,
-        sessionKeyManager?:SessionKeyManagerInterface,
-        encryptor?:SymmetricEncryptionInterface,
         kdf?:KeyDerivationFunction
     ) {
-        if (!sessionKeyManager) {
-            sessionKeyManager = createSessionManager()
-        }
-        if (!encryptor) {
-            encryptor = new SymmetricCrypto()
-        }
         if (!kdf) {
             kdf = blakeKdf
         }
-        this.encryptor = encryptor
         this.kdf = kdf
-        this.sessionKeyManager = sessionKeyManager
         this.keys = keys
         this.identityString = identityString
         this.oneTimeKeys = new Map<string, CryptoKey>()
@@ -228,80 +214,75 @@ export class X3DH {
             const publicKeys = bundle.map(x => x.publicKey)
             const signature = await signBundle(this.keys.identitySecret, publicKeys)
 
-            // Store one-time keys locally
             for (const kp of bundle) {
-                const publicKeyRaw = await exportPublicKey({ publicKey: kp.publicKey } as CryptoKeyPair)
-                const publicKeyHex = arrayBufferToHex(publicKeyRaw)
-                this.oneTimeKeys.set(publicKeyHex, kp.secretKey)
+                // Export X25519 public key as raw bytes
+                const pkBytes = await webcrypto.subtle.exportKey('raw', kp.publicKey)
+                const pkHex = arrayBufferToHex(pkBytes)
+                this.oneTimeKeys.set(pkHex, kp.secretKey)
             }
 
-            // Hex-encode all the public keys
-            const encodedBundle: string[] = []
-            for (const pk of publicKeys) {
-                const rawKey = await exportPublicKey({ publicKey: pk } as CryptoKeyPair)
-                encodedBundle.push(arrayBufferToHex(rawKey))
-            }
+            const publicKeysHex = await Promise.all(
+                publicKeys.map(async pk => {
+                    const bytes = await webcrypto.subtle.exportKey('raw', pk)
+                    return arrayBufferToHex(bytes)
+                })
+            )
 
             return {
                 signature: arrayBufferToHex(signature),
-                bundle: encodedBundle
+                bundle: publicKeysHex
             }
-        } catch (error) {
-            throw new Error(`Failed to generate one-time keys: ${error}`)
+        } catch (err) {
+            throw new Error('Failed to generate one-time keys: ' + err)
         }
     }
 
-    /**
-     * Get and remove a one-time secret key by its public key hex.
-     */
-    async fetchAndWipeOneTimeSecretKey (publicKeyHex: string): Promise<CryptoKey> {
-        const secretKey = this.oneTimeKeys.get(publicKeyHex)
-        if (!secretKey) {
-            throw new Error('One-time key not found: ' + publicKeyHex)
+    private async fetchAndWipeOneTimeSecretKey (pubKey:string):Promise<X25519SecretKey> {
+        const found = this.oneTimeKeys.get(pubKey)
+        if (!found) {
+            throw new Error('Public key not found locally: ' + pubKey)
         }
-        this.oneTimeKeys.delete(publicKeyHex)
-        return secretKey
+        this.oneTimeKeys.delete(pubKey)
+        return found
     }
 
     /**
-     * Get the shared key when sending an initial message.
+     * Initiate X3DH key exchange as the sender.
+     * Returns the shared secret and handshake data to send to recipient.
      *
-     * @param {InitServerInfo} res
-     * @param {string} _senderIdentity - not needed for key operations,
-     *   ust for context
+     * @param {string} recipientIdentity
+     * @param {InitClientFunction} getServerResponse
      */
-    async initSenderGetSK (
-        res:InitServerInfo,
-        _senderIdentity:string
-    ):Promise<RecipientInitWithSK> {
+    async initSend (
+        recipientIdentity:string,
+        getServerResponse:InitClientFunction
+    ):Promise<InitSendResult> {
+        const senderIdentity = this.identityString
+        const senderPreKey = this.keys
+
+        const res:InitServerInfo = await getServerResponse(recipientIdentity)
+
+        // Verify the signature on the signed pre-key
         const identityKey = await importEd25519PublicKey(res.IdentityKey)
         const signedPreKey = await importX25519PublicKey(res.SignedPreKey.PreKey)
-        const signature = hexToArrayBuffer(res.SignedPreKey.Signature)
+        const signatureHex = hexToArrayBuffer(res.SignedPreKey.Signature)
 
-        // Check signature
-        const valid = await verifyBundle(
+        const validSignature = await verifyBundle(
             identityKey,
             [signedPreKey],
-            new Uint8Array(signature)
+            new Uint8Array(signatureHex)
         )
-        if (!valid) {
-            throw new Error('Invalid signature')
-        }
-        const ephemeral = await generateKeyPair()
-        const ephSecret = ephemeral.secretKey
-        const ephPublic = ephemeral.publicKey
 
-        // X3DH uses the sender's identity key and ephemeral key with
-        //   recipient's signed pre-key
-        // Since Web Crypto API doesn't support Ed25519->X25519 conversion,
-        //   we'll use a simplified approach where the pre-key serves
-        //   as the identity exchange key
-
-        // Use the sender's pre-key for DH operations
-        const senderPreKey = {
-            preKeySecret: this.keys.preKeySecret,
-            preKeyPublic: this.keys.preKeyPublic
+        if (!validSignature) {
+            throw new Error(
+                'Invalid signature on signed pre-key for ' + recipientIdentity
+            )
         }
+
+        // Generate ephemeral key pair
+        const ephPair = await generateKeyPair()
+        const ephSecret:X25519SecretKey = ephPair.secretKey
+        const ephPublic:X25519PublicKey = ephPair.publicKey
 
         // See the X3DH specification
         // DH1 = DH(IK_A, SPK_B) - sender identity (pre-key)
@@ -315,172 +296,95 @@ export class X3DH {
         // Use signed pre-key as recipient identity
         const DH2 = await scalarMult(ephSecret, signedPreKey)
         const DH3 = await scalarMult(ephSecret, signedPreKey)
-        let SK:CryptographyKey
+        let SK:Uint8Array
         if (res.OneTimeKey) {
             const otk = await importX25519PublicKey(res.OneTimeKey)
             const DH4 = await scalarMult(ephSecret, otk)
-            SK = await CryptographyKey.fromBytes(
-                new Uint8Array(await this.kdf(
-                    concat(
-                        await DH1.getBytes(),
-                        await DH2.getBytes(),
-                        await DH3.getBytes(),
-                        await DH4.getBytes()
-                    )
-                ))
-            )
+            SK = new Uint8Array(await this.kdf(
+                concat(
+                    await DH1.getBytes(),
+                    await DH2.getBytes(),
+                    await DH3.getBytes(),
+                    await DH4.getBytes()
+                )
+            ))
             await wipe(DH4)
         } else {
-            SK = await CryptographyKey.fromBytes(
-                new Uint8Array(await this.kdf(
-                    concat(
-                        await DH1.getBytes(),
-                        await DH2.getBytes(),
-                        await DH3.getBytes()
-                    )
-                ))
-            )
+            SK = new Uint8Array(await this.kdf(
+                concat(
+                    await DH1.getBytes(),
+                    await DH2.getBytes(),
+                    await DH3.getBytes()
+                )
+            ))
         }
 
         // Wipe DH keys since we have SK
         await wipe(DH1)
         await wipe(DH2)
         await wipe(DH3)
-        // Note: ephSecret and senderX are CryptoKeys, so wipe won't do much
-        // but we'll keep the calls for API compatibility
 
-        return {
-            IK: identityKey,
-            EK: ephPublic,
-            SK,
-            OTK: res.OneTimeKey
-        }
-    }
-
-    /**
-     * Initialize for sending.
-     *
-     * @param {string} recipientIdentity
-     * @param {InitClientFunction} getServerResponse
-     * @param {string|Uint8Array} message
-     */
-    async initSend (
-        recipientIdentity:string,
-        getServerResponse:InitClientFunction,
-        message:string|Uint8Array
-    ):Promise<InitSenderInfo> {
-        const senderIdentity = this.identityString
-        const senderPublicKey = this.keys.identityPublic
-        const senderPreKey = {
-            preKeySecret: this.keys.preKeySecret,
-            preKeyPublic: this.keys.preKeyPublic
-        }
-
-        // Stub out a call to get the server response:
-        const response = await getServerResponse(recipientIdentity)
-
-        // Get the shared symmetric key (and other handshake data):
-        const { IK, EK, SK, OTK } = await this.initSenderGetSK(
-            response,
-            senderIdentity
-        )
-
-        // Get the assocData for AEAD using keys module:
-        const senderPublicRaw = await exportPublicKey({
-            publicKey: senderPublicKey
-        } as CryptoKeyPair)
-        const ikRaw = await exportPublicKey({ publicKey: IK } as CryptoKeyPair)
-        const assocData = arrayBufferToHex(
-            concat(new Uint8Array(senderPublicRaw), new Uint8Array(ikRaw))
-        )
-
-        // Set the session key (as a sender):
-        await this.sessionKeyManager.setSessionKey(recipientIdentity, SK, false)
-        await this.sessionKeyManager.setAssocData(recipientIdentity, assocData)
-        return {
+        const handshakeData: InitSenderInfo = {
             Sender: senderIdentity,
-            IdentityKey: arrayBufferToHex(senderPublicRaw),
-            PreKey: arrayBufferToHex(await exportPublicKey({
-                publicKey: senderPreKey.preKeyPublic
-            } as CryptoKeyPair)),
-            EphemeralKey: arrayBufferToHex(await exportPublicKey({
-                publicKey: EK
-            } as CryptoKeyPair)),
-            OneTimeKey: OTK,
-            CipherText: await this.encryptor.encrypt(
-                message,
-                await this.sessionKeyManager.getEncryptionKey(recipientIdentity),
-                assocData
-            )
+            IdentityKey: arrayBufferToHex(
+                await webcrypto.subtle.exportKey('raw', senderPreKey.identityPublic)
+            ),
+            PreKey: arrayBufferToHex(
+                await webcrypto.subtle.exportKey('raw', senderPreKey.preKeyPublic)
+            ),
+            EphemeralKey: arrayBufferToHex(
+                await webcrypto.subtle.exportKey('raw', ephPublic)
+            ),
+            OneTimeKey: res.OneTimeKey
+        }
+
+        return {
+            sharedSecret: SK,
+            handshakeData
         }
     }
 
     /**
-     * Get the shared key when receiving an initial message.
+     * Receive and process an initial X3DH handshake message.
+     * Returns the shared secret and sender's identity.
      *
      * @param {InitSenderInfo} req
-     * @param {string} recipientIdentity - not needed for key operations,
-     *   just for context
-     * @param {X25519SecretKey} preKeySecret
+     * @returns {Promise<InitReceiveResult>}
      */
-    async initRecvGetSk (
-        req:InitSenderInfo,
-        _recipientIdentity:string,
-        preKeySecret:X25519SecretKey
-    ):Promise<{ Sender:string, SK:CryptographyKey, IK:X25519PublicKey }> {
-        // Decode strings
-        const senderIdentityKey = await importEd25519PublicKey(req.IdentityKey)
+    async initReceive (req:InitSenderInfo):Promise<InitReceiveResult> {
+        const preKeySecret = this.keys.preKeySecret
+        const recipientPreKey = this.keys
+
+        // Validate sender's identity key signature
         const senderPreKey = await importX25519PublicKey(req.PreKey)
         const ephemeral = await importX25519PublicKey(req.EphemeralKey)
 
-        // Now we have the sender's pre-key public, we can do proper
-        //   X3DH DH operations
-        // The receiver needs to perform DH operations using their own
-        //   private keys
-        // with the sender's public keys
-
-        // For receiver, we use our pre-key as our identity exchange key
-        const recipientPreKey = {
-            preKeySecret: this.keys.preKeySecret,
-            preKeyPublic: this.keys.preKeyPublic
-        }
-
-        // See the X3DH specification (receiver's perspective):
-        // DH1 = DH(SPK_B, IK_A) - recipient's signed pre-key with sender's
-        //   identity (pre-key)
-        // DH2 = DH(IK_B, EK_A) - recipient's identity (pre-key) with
-        //   sender's ephemeral
-        // DH3 = DH(SPK_B, EK_A) - recipient's signed pre-key with
-        //   sender's ephemeral
+        // Perform X3DH
         const DH1 = await scalarMult(preKeySecret, senderPreKey)
         const DH2 = await scalarMult(recipientPreKey.preKeySecret, ephemeral)
         const DH3 = await scalarMult(preKeySecret, ephemeral)
 
-        let SK:CryptographyKey
+        let SK:Uint8Array
         if (req.OneTimeKey) {
             const otk = await this.fetchAndWipeOneTimeSecretKey(req.OneTimeKey)
             const DH4 = await scalarMult(otk, ephemeral)
-            SK = await CryptographyKey.fromBytes(
-                new Uint8Array(await this.kdf(
-                    concat(
-                        await DH1.getBytes(),
-                        await DH2.getBytes(),
-                        await DH3.getBytes(),
-                        await DH4.getBytes()
-                    )
-                ))
-            )
+            SK = new Uint8Array(await this.kdf(
+                concat(
+                    await DH1.getBytes(),
+                    await DH2.getBytes(),
+                    await DH3.getBytes(),
+                    await DH4.getBytes()
+                )
+            ))
             await wipe(DH4)
         } else {
-            SK = await CryptographyKey.fromBytes(
-                new Uint8Array(await this.kdf(
-                    concat(
-                        await DH1.getBytes(),
-                        await DH2.getBytes(),
-                        await DH3.getBytes()
-                    )
-                ))
-            )
+            SK = new Uint8Array(await this.kdf(
+                concat(
+                    await DH1.getBytes(),
+                    await DH2.getBytes(),
+                    await DH3.getBytes()
+                )
+            ))
         }
         // Wipe DH keys since we have SK
         await wipe(DH1)
@@ -488,90 +392,9 @@ export class X3DH {
         await wipe(DH3)
 
         return {
-            Sender: req.Sender,
-            SK,
-            IK: senderIdentityKey
+            sharedSecret: SK,
+            senderIdentity: req.Sender
         }
-    }
-
-    /**
-     * Initialize keys for receiving an initial message.
-     * Returns the initial plaintext message on success.
-     * Throws on failure.
-     *
-     * @param {InitSenderInfo} req
-     * @returns {(string|Uint8Array)[]}
-     */
-    async initReceive (req:InitSenderInfo):Promise<(string|Uint8Array)[]> {
-        const identityPublic = this.keys.identityPublic
-        const preKeySecret = this.keys.preKeySecret
-        const recipientIdentity = this.identityString
-        const { Sender, SK, IK } = await this.initRecvGetSk(
-            req,
-            recipientIdentity,
-            preKeySecret
-        )
-
-        const ikRaw = await exportPublicKey({ publicKey: IK } as CryptoKeyPair)
-        const identityPublicRaw = await exportPublicKey({
-            publicKey: identityPublic
-        } as CryptoKeyPair)
-        const assocData = arrayBufferToHex(
-            concat(new Uint8Array(ikRaw), new Uint8Array(identityPublicRaw))
-        )
-
-        try {
-            await this.sessionKeyManager.setSessionKey(Sender, SK, true)
-            await this.sessionKeyManager.setAssocData(Sender, assocData)
-            return [
-                Sender,
-                await this.encryptor.decrypt(
-                    req.CipherText,
-                    await this.sessionKeyManager.getEncryptionKey(Sender, true),
-                    assocData
-                )
-            ]
-        } catch (e) {
-            // Decryption failure! Destroy the session.
-            await this.sessionKeyManager.destroySessionKey(Sender)
-            throw e
-        }
-    }
-
-    /**
-     * Encrypt the next message to send to the recipient.
-     *
-     * @param {string} recipient
-     * @param {string|Uint8Array} message
-     * @returns {string}
-     */
-    async encryptNext (
-        recipient:string,
-        message:string|Uint8Array
-    ):Promise<string> {
-        return this.encryptor.encrypt(
-            message,
-            await this.sessionKeyManager.getEncryptionKey(recipient, false),
-            await this.sessionKeyManager.getAssocData(recipient)
-        )
-    }
-
-    /**
-     * Decrypt the next message received by the sender.
-     *
-     * @param {string} sender
-     * @param {string} encrypted
-     * @returns {string|Uint8Array}
-     */
-    async decryptNext (
-        sender:string,
-        encrypted:string
-    ):Promise<string|Uint8Array> {
-        return this.encryptor.decrypt(
-            encrypted,
-            await this.sessionKeyManager.getEncryptionKey(sender, true),
-            await this.sessionKeyManager.getAssocData(sender)
-        )
     }
 
     /**
@@ -601,5 +424,4 @@ export class X3DH {
 
 // export the interfaces we use
 export * from './symmetric'
-export * from './session-storage'
 export * from './util'

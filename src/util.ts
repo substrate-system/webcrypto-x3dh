@@ -192,10 +192,10 @@ export async function wipe (key:CryptographyKey):Promise<void> {
     // The garbage collector will handle this
     // We can try to zero the buffer if it's available
     try {
-        const buffer = key.getBuffer()
+        const buffer = await key.getBytes()
         buffer.fill(0)
     } catch {
-        // Key is not extractable, which is fine for security
+        // Key is not extractable, which is fine
     }
 }
 

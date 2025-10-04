@@ -25,10 +25,12 @@ export class CryptographyKey {
      * Create a CryptographyKey from raw bytes.
      * The key will be imported as a non-extractable HKDF key.
      */
-    static async fromBytes (keyMaterial:Uint8Array):Promise<CryptographyKey> {
+    static async fromBytes (
+        keyMaterial:Uint8Array<ArrayBuffer>
+    ):Promise<CryptographyKey> {
         const key = await globalThis.crypto.subtle.importKey(
             'raw',
-            keyMaterial,
+            keyMaterial.buffer,
             'HKDF',
             false, // non-extractable
             ['deriveBits', 'deriveKey']
@@ -55,10 +57,10 @@ export class CryptographyKey {
      * Used for encryption key derivation and ratcheting.
      */
     async deriveBits (
-        salt:Uint8Array,
-        info:Uint8Array,
+        salt:Uint8Array<ArrayBuffer>,
+        info:Uint8Array<ArrayBuffer>,
         length:number
-    ):Promise<Uint8Array> {
+    ):Promise<Uint8Array<ArrayBuffer>> {
         const bits = await globalThis.crypto.subtle.deriveBits(
             {
                 name: 'HKDF',
@@ -77,8 +79,8 @@ export class CryptographyKey {
      * Used for key ratcheting.
      */
     async deriveKey (
-        salt:Uint8Array,
-        info:Uint8Array
+        salt:Uint8Array<ArrayBuffer>,
+        info:Uint8Array<ArrayBuffer>
     ):Promise<CryptographyKey> {
         // Derive bits and re-import as HKDF key
         const derivedBits = await this.deriveBits(salt, info, 32)
@@ -90,7 +92,7 @@ export class CryptographyKey {
      * Uses deriveBits with empty salt/info to extract the key material.
      * This is needed for X3DH handshake where multiple DH secrets are concatenated.
      */
-    async getBytes (length:number = 32):Promise<Uint8Array> {
+    async getBytes (length:number = 32):Promise<Uint8Array<ArrayBuffer>> {
         return await this.deriveBits(
             new Uint8Array(0), // empty salt
             new Uint8Array(0), // empty info
@@ -280,7 +282,7 @@ export async function blakeKdf (
     if (!salt) {
         salt = new Uint8Array(32) // All zeros
     } else if (salt instanceof CryptographyKey) {
-        salt = salt.getBuffer()
+        salt = await salt.getBytes()
     }
     if (!info) {
         info = new TextEncoder().encode('Soatok Dreamseeker test code')

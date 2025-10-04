@@ -42,6 +42,15 @@ function toArrayBuffer (uint8Array:Uint8Array):ArrayBuffer {
     ) as ArrayBuffer
 }
 
+// Helper to compare two Uint8Arrays
+function arraysEqual (a:Uint8Array, b:Uint8Array):boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false
+    }
+    return true
+}
+
 test('X3DH integration with @substrate-system/keys', async t => {
     t.plan(10)
 
@@ -95,49 +104,28 @@ test('X3DH integration with @substrate-system/keys', async t => {
     }
 
     // 7. Perform X3DH handshake from Fox to Wolf
-    const message = 'Hello from Fox using keys module!'
-    const handshake = await foxX3DH.initSend(wolfKeys.DID, wolfResponse, message)
+    const sendResult = await foxX3DH.initSend(wolfKeys.DID, wolfResponse)
 
-    // 8. Wolf receives and decrypts the handshake
-    const [sender, decryptedMessage] = await wolfX3DH.initReceive(handshake)
+    t.ok(sendResult.sharedSecret instanceof Uint8Array, 'Sender should get shared secret')
 
-    t.equal(sender, foxKeys.DID, 'Sender should be Fox DID')
-    t.equal(decryptedMessage.toString(), message,
-        'Message should decrypt correctly')
+    // 8. Wolf receives the handshake
+    const recvResult = await wolfX3DH.initReceive(sendResult.handshakeData)
 
-    // 9. Test ongoing message exchange
-    const foxMessage = 'Continuing conversation with EccKeys integration'
-    const encryptedFromFox = await foxX3DH.encryptNext(wolfKeys.DID, foxMessage)
-    const decryptedByWolf = await wolfX3DH.decryptNext(
-        foxKeys.DID,
-        encryptedFromFox
+    t.equal(recvResult.senderIdentity, foxKeys.DID, 'Should identify sender as Fox')
+    t.ok(recvResult.sharedSecret instanceof Uint8Array, 'Receiver should get shared secret')
+
+    // 9. Verify both sides have the same shared secret
+    t.ok(
+        arraysEqual(sendResult.sharedSecret, recvResult.sharedSecret),
+        'Both sides should have the same shared secret'
     )
-
-    t.equal(
-        decryptedByWolf.toString(),
-        foxMessage,
-        'Fox message should decrypt correctly'
-    )
-
-    const wolfMessage = 'Reply from Wolf with EccKeys identity'
-    const encryptedFromWolf = await wolfX3DH.encryptNext(
-        foxKeys.DID,
-        wolfMessage
-    )
-    const decryptedByFox = await foxX3DH.decryptNext(
-        wolfKeys.DID,
-        encryptedFromWolf
-    )
-
-    t.equal(decryptedByFox.toString(), wolfMessage,
-        'Wolf message should decrypt correctly')
 
     // Note: In browser environments, you can use EccKeys.create() without
     //   the session flag to enable persistence via IndexedDB.
     // The keys will automatically be saved and can be reloaded later
     //   with EccKeys.load().
-    // Session management (for ongoing conversations)
-    //   would need to be handled separately from identity key persistence.
+    // For ongoing message encryption, you would use the shared secret
+    //   to initialize a ratcheting protocol like Double Ratchet.
 })
 
 test('X3DH with session-only keys (no persistence)', async t => {
@@ -184,13 +172,11 @@ test('X3DH with session-only keys (no persistence)', async t => {
         }
     }
 
-    const testMessage = 'Session-only message'
-    const handshake = await aliceX3DH.initSend(
-        bobKeys.DID,
-        bobResponse,
-        testMessage
-    )
-    const [_sender, received] = await bobX3DH.initReceive(handshake)
+    const sendResult = await aliceX3DH.initSend(bobKeys.DID, bobResponse)
+    const recvResult = await bobX3DH.initReceive(sendResult.handshakeData)
 
-    t.equal(received.toString(), testMessage, 'Session-only keys should work')
+    t.ok(
+        arraysEqual(sendResult.sharedSecret, recvResult.sharedSecret),
+        'Session-only keys should work'
+    )
 })
