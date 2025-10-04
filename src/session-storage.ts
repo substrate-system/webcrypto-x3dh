@@ -277,7 +277,8 @@ export class IndexedDBSessionManager {
             let tx = db.transaction([this.sessionStore], 'readonly')
             const store = tx.objectStore(this.sessionStore)
 
-            const serializedKeys = await new Promise<SerializedSessionKeys | null>((resolve, reject) => {
+            const serializedKeys =
+            await new Promise<SerializedSessionKeys|null>((resolve, reject) => {
                 const request = store.get(id)
                 request.onerror = () => reject(request.error)
                 request.onsuccess = () => resolve(request.result)
@@ -285,8 +286,12 @@ export class IndexedDBSessionManager {
 
             if (serializedKeys) {
                 const sessionKeys:SessionKeys = {
-                    sending: new CryptographyKey(new Uint8Array(serializedKeys.sending)),
-                    receiving: new CryptographyKey(new Uint8Array(serializedKeys.receiving))
+                    sending: new CryptographyKey(
+                        new Uint8Array(serializedKeys.sending)
+                    ),
+                    receiving: new CryptographyKey(
+                        new Uint8Array(serializedKeys.receiving)
+                    )
                 }
 
                 await wipe(sessionKeys.sending)
@@ -294,7 +299,10 @@ export class IndexedDBSessionManager {
             }
 
             // Remove from IndexedDB
-            tx = db.transaction([this.sessionStore, this.assocDataStore], 'readwrite')
+            tx = db.transaction(
+                [this.sessionStore, this.assocDataStore],
+                'readwrite'
+            )
             const sessionStore = tx.objectStore(this.sessionStore)
             const assocStore = tx.objectStore(this.assocDataStore)
 

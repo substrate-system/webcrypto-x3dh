@@ -10,8 +10,8 @@
 X3DH for the browser. This is a typeScript implementation of X3DH, as described
 in ***[Going Bark: A Furry's Guide to End-to-End Encryption](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/)***.
 
-**This uses the**
-**[Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)**,
+This uses the
+[Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API),
 so is usable in browsers.
 
 ## fork
@@ -69,9 +69,11 @@ Node.js automatically:
 - Fallback mechanisms ensure keys work across different Web Crypto
   API implementations
 
+
 ### Key Management
 
-This library integrates with `@substrate-system/keys` for identity key management:
+This library integrates with `@substrate-system/keys` for identity
+key management:
 
 - **Identity Keys**: Long-term Ed25519/X25519 keys managed
   by `@substrate-system/keys`
@@ -84,31 +86,22 @@ This library integrates with `@substrate-system/keys` for identity key managemen
 
 ## Usage
 
-### Basic Setup with @substrate-system/keys
+### Basics with `@substrate-system/keys`
 
 ```ts
 import { EccKeys } from '@substrate-system/keys/ecc'
 import { webcrypto } from '@substrate-system/one-webcrypto'
 import { X3DH } from '@substrate-system/webcrypto-x3dh'
 
-// 1. Create identity keys using @substrate-system/keys
-const aliceKeys = await EccKeys.create() // Persists to IndexedDB in browser
+// 1. Create identity keys with @substrate-system/keys
+const aliceKeys = await EccKeys.create()
 await aliceKeys.persist()
 
 // 2. Generate X25519 pre-keys for X3DH
-const preKeyPair = await webcrypto.subtle.generateKey(
-    { name: 'X25519' },
-    true,
-    ['deriveKey']
-) as CryptoKeyPair
+const preKeyPair = await X3DH.prekeys()
 
 // 3. Create X3DH keys object
-const x3dhKeys = {
-    identitySecret: aliceKeys.privateWriteKey,
-    identityPublic: aliceKeys.publicWriteKey,
-    preKeySecret: preKeyPair.privateKey,
-    preKeyPublic: preKeyPair.publicKey
-}
+const x3dhKeys = X3DH.X3DHKeys(aliceKeys, preKeyPair)
 
 // 4. Initialize X3DH with keys and identity string
 const x3dh = new X3DH(x3dhKeys, aliceKeys.DID)
@@ -120,25 +113,27 @@ You can customize the X3DH implementation:
 
 ```ts
 const x3dh = new X3DH(
-    x3dhKeys,                    // X3DHKeys (required)
-    identityString,              // string (required)
-    sessionKeyManager,           // SessionKeyManagerInterface (optional)
-    symmetricEncryptionHandler,  // SymmetricEncryptionInterface (optional)
-    keyDerivationFunction        // KeyDerivationFunction (optional)
+  x3dhKeys,                    // X3DHKeys (required)
+  identityString,              // string/DID (required)
+  sessionKeyManager,           // SessionKeyManagerInterface (optional)
+  symmetricEncryptionHandler,  // SymmetricEncryptionInterface (optional)
+  keyDerivationFunction        // KeyDerivationFunction (optional)
 )
 ```
 
-Session keys are automatically managed using IndexedDB in browsers and
-memory in Node.js.
+Session keys are automatically persisted using IndexedDB in browsers.
+
 
 ### Performing X3DH Key Exchange
 
-Once your X3DH object is instantiated, you can perform key exchanges and
+Once your X3DH object has been created, you can perform key exchanges and
 encrypt messages:
 
 ```ts
 // Generate one-time keys for others to use
 const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
+// Upload oneTimeKeyBundle to your server so others can retrieve them
+// during key exchange
 
 // Initiate communication (sender side)
 const firstEncrypted = await x3dh.initSend(
@@ -173,14 +168,14 @@ type InitServerInfo = {
 
 ```ts
 // Receive initial message (recipient side)
-const [senderDID, firstMessage] = await x3dh.initRecv(handshakeData)
+const [senderDID, firstMessage] = await x3dh.initReceive(handshakeData)
 
 // Ongoing secure communication
 const nextEncrypted = await x3dh.encryptNext('recipient-did', 'Follow-up message')
 const nextMessage = await x3dh.decryptNext('sender-did', nextEncrypted)
 ```
 
-Note: `initRecv()` returns the sender's DID and the decrypted message.
+Note: `initReceive()` returns the sender's DID and the decrypted message.
 Session keys are automatically managed and ratcheted for forward secrecy.
 
 ### Session Key Management
