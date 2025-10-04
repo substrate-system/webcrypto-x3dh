@@ -98,7 +98,7 @@ test('x3dh Handshake with one-time keys', async t => {
     const sent = await fox_x3dh.initSend('wolf', wolfResponse, message)
 
     // 6. Pass the handshake to wolf->fox
-    const [sender, recv] = await wolf_x3dh.initRecv(sent)
+    const [sender, recv] = await wolf_x3dh.initReceive(sent)
     t.equal(sender, 'fox', 'sender should be "fox"')
     t.equal(recv.toString(), message, 'should decrypt the message')
 

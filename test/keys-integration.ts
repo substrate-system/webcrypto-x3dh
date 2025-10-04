@@ -99,7 +99,7 @@ test('X3DH integration with @substrate-system/keys', async t => {
     const handshake = await foxX3DH.initSend(wolfKeys.DID, wolfResponse, message)
 
     // 8. Wolf receives and decrypts the handshake
-    const [sender, decryptedMessage] = await wolfX3DH.initRecv(handshake)
+    const [sender, decryptedMessage] = await wolfX3DH.initReceive(handshake)
 
     t.equal(sender, foxKeys.DID, 'Sender should be Fox DID')
     t.equal(decryptedMessage.toString(), message,
@@ -133,12 +133,11 @@ test('X3DH integration with @substrate-system/keys', async t => {
         'Wolf message should decrypt correctly')
 
     // Note: In browser environments, you can use EccKeys.create() without
-    //   the session flag
-    // to enable persistence via IndexedDB. The keys will automatically be
-    //   saved and can
-    // be reloaded later with EccKeys.load(). Session management
-    //   (for ongoing conversations)
-    // would need to be handled separately from identity key persistence.
+    //   the session flag to enable persistence via IndexedDB.
+    // The keys will automatically be saved and can be reloaded later
+    //   with EccKeys.load().
+    // Session management (for ongoing conversations)
+    //   would need to be handled separately from identity key persistence.
 })
 
 test('X3DH with session-only keys (no persistence)', async t => {
@@ -191,7 +190,7 @@ test('X3DH with session-only keys (no persistence)', async t => {
         bobResponse,
         testMessage
     )
-    const [_sender, received] = await bobX3DH.initRecv(handshake)
+    const [_sender, received] = await bobX3DH.initReceive(handshake)
 
     t.equal(received.toString(), testMessage, 'Session-only keys should work')
 })

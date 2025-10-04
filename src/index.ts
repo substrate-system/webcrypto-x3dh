@@ -163,6 +163,28 @@ export class X3DH {
     identityString:string
     oneTimeKeys:Map<string, CryptoKey>
 
+    static async prekeys ():Promise<CryptoKeyPair> {
+        const preKeyPair = await webcrypto.subtle.generateKey(
+            { name: 'X25519' },
+            true,
+            ['deriveKey']
+        )
+
+        return preKeyPair as CryptoKeyPair
+    }
+
+    static X3DHKeys (
+        idKeys:{ privateWriteKey, publicWriteKey },
+        preKeypair:{ privateKey, publicKey }
+    ):X3DHKeys {
+        return {
+            identitySecret: idKeys.privateWriteKey,
+            identityPublic: idKeys.publicWriteKey,
+            preKeySecret: preKeypair.privateKey,
+            preKeyPublic: preKeypair.publicKey
+        }
+    }
+
     constructor (
         keys:X3DHKeys,
         identityString:string,

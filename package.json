@@ -25,8 +25,8 @@
     "test:node": "esbuild --platform=neutral --bundle ./test/index.ts --external:crypto --external:tweetnacl | node",
     "test:browser": "esbuild --bundle ./test/index.ts | tapout",
     "build-docs": "typedoc ./src/*.ts",
-    "preversion": "npm run lint",
     "changelog": "auto-changelog -p --template keepachangelog --breaking-pattern 'BREAKING CHANGE:'",
+    "preversion": "npm run lint",
     "version": "npm run toc && npm run changelog && git add CHANGELOG.md README.md",
     "postversion": "git push --follow-tags && npm publish",
     "prepublishOnly": "npm run build"
