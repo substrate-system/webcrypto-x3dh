@@ -11,45 +11,88 @@ const PREFIX_COMMIT_KEY = new Uint8Array([
 ])
 
 /**
- * A wrapper around CryptoKey that provides compatibility with the existing API
+ * A wrapper around CryptoKey that uses non-extractable keys for security.
+ * Keys are stored as HKDF base keys to enable ratcheting via deriveBits.
  */
 export class CryptographyKey {
-    private key?:CryptoKey
-    private buffer?:Uint8Array<ArrayBuffer>
+    private key:CryptoKey
 
-    constructor (keyMaterial:Uint8Array|CryptoKey) {
-        if (keyMaterial instanceof CryptoKey) {
-            this.key = keyMaterial
-        } else {
-            // Store the buffer for later import
-            this.buffer = keyMaterial as Uint8Array<ArrayBuffer>
-        }
+    private constructor (key:CryptoKey) {
+        this.key = key
     }
 
-    async getCryptoKey ():Promise<CryptoKey> {
-        if (this.key) {
-            return this.key
-        }
-
-        if (this.buffer) {
-            this.key = await globalThis.crypto.subtle.importKey(
-                'raw',
-                this.buffer,
-                { name: 'HMAC', hash: 'SHA-256' },
-                false,
-                ['sign', 'verify']
-            )
-            return this.key
-        }
-
-        throw new Error('No key material available')
+    /**
+     * Create a CryptographyKey from raw bytes.
+     * The key will be imported as a non-extractable HKDF key.
+     */
+    static async fromBytes (keyMaterial:Uint8Array):Promise<CryptographyKey> {
+        const key = await globalThis.crypto.subtle.importKey(
+            'raw',
+            keyMaterial,
+            'HKDF',
+            false, // non-extractable
+            ['deriveBits', 'deriveKey']
+        )
+        return new CryptographyKey(key)
     }
 
-    getBuffer ():Uint8Array<ArrayBuffer> {
-        if (this.buffer) {
-            return this.buffer
-        }
-        throw new Error('Buffer not available for non-extractable keys')
+    /**
+     * Create a CryptographyKey from an existing CryptoKey.
+     */
+    static fromCryptoKey (key:CryptoKey):CryptographyKey {
+        return new CryptographyKey(key)
+    }
+
+    /**
+     * Get the underlying CryptoKey object.
+     */
+    getCryptoKey ():CryptoKey {
+        return this.key
+    }
+
+    /**
+     * Derive bytes from this key using HKDF.
+     * Used for encryption key derivation and ratcheting.
+     */
+    async deriveBits (
+        salt:Uint8Array,
+        info:Uint8Array,
+        length:number
+    ):Promise<Uint8Array> {
+        const bits = await globalThis.crypto.subtle.deriveBits(
+            {
+                name: 'HKDF',
+                hash: 'SHA-256',
+                salt,
+                info
+            },
+            this.key,
+            length * 8 // convert bytes to bits
+        )
+        return new Uint8Array(bits)
+    }
+
+    /**
+     * Derive a new CryptographyKey from this key using HKDF.
+     * Used for key ratcheting.
+     */
+    async deriveKey (
+        salt:Uint8Array,
+        info:Uint8Array
+    ):Promise<CryptographyKey> {
+        const derivedKey = await globalThis.crypto.subtle.deriveKey(
+            {
+                name: 'HKDF',
+                hash: 'SHA-256',
+                salt,
+                info
+            },
+            this.key,
+            'HKDF',
+            false, // non-extractable
+            ['deriveBits', 'deriveKey']
+        )
+        return new CryptographyKey(derivedKey)
     }
 }
 
@@ -117,7 +160,7 @@ export async function encryptData (
         extra: assocData
     })
 
-    const { encKey, commitment } = await deriveKeys(key, nonce)
+    const { encKeyBytes, commitment } = await deriveKeys(key, nonce)
 
     // Convert message to Uint8Array
     const messageBytes = typeof message === 'string' ?
@@ -127,7 +170,7 @@ export async function encryptData (
     // Create AES-GCM key for encryption
     const aesKey = await globalThis.crypto.subtle.importKey(
         'raw',
-        encKey.getBuffer(),
+        encKeyBytes,
         { name: 'AES-GCM' },
         false,
         ['encrypt']
@@ -183,7 +226,7 @@ export async function decryptData (
         extra: assocData
     })
 
-    const { encKey, commitment } = await deriveKeys(key, new Uint8Array(nonce))
+    const { encKeyBytes, commitment } = await deriveKeys(key, new Uint8Array(nonce))
 
     // Verify commitment
     if (!arrayBuffersEqual(storedCommitment, commitment.buffer)) {
@@ -193,7 +236,7 @@ export async function decryptData (
     // Create AES-GCM key for decryption
     const aesKey = await globalThis.crypto.subtle.importKey(
         'raw',
-        encKey.getBuffer(),
+        encKeyBytes,
         { name: 'AES-GCM' },
         false,
         ['decrypt']

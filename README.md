@@ -17,9 +17,17 @@ so is usable in browsers.
 X3DH (Extended Triple Diffie-Hellman) is a secure key exchange protocol for
 end-to-end encrypted communication.
 It allows two parties to establish a shared secret for encrypted messaging,
-even when one party is offline. This specific library implements X3DH for
-browsers using the Web Crypto API, enabling secure initial handshakes and
-ongoing encrypted conversations with forward secrecy.
+even when one party is offline. This library implements X3DH for browsers
+using the Web Crypto API, enabling secure initial handshakes. It also includes
+a basic symmetric ratcheting mechanism for ongoing message encryption (not the
+Double Ratchet protocol used by Signal).
+
+In browser environments, this library automatically stores derived
+session keys in `IndexedDB` (database: `x3dh-sessions`) so ongoing conversations
+persist across page reloads. Only the symmetric encryption keys derived from
+the X3DH handshake are stored - your identity keys should be managed separately,
+e.g. by `@substrate-system/keys`. One-time keys are kept in memory only and
+not persisted.
 
 ## fork
 
@@ -90,14 +98,16 @@ Node.js automatically:
 This library integrates with `@substrate-system/keys` for identity
 key management:
 
-- **Identity Keys**: Long-term Ed25519/X25519 keys managed
-  by `@substrate-system/keys`
-- **Session Keys**: Short-term keys for ongoing conversations stored
-  in IndexedDB
-- **Automatic Storage**: Identity keys persist to IndexedDB in browsers,
-  session-only in Node.js
+- **Identity Keys**: Long-term Ed25519/X25519 keys managed by
+  `@substrate-system/keys` (persisted separately by that library)
+- **Session Keys**: Derived symmetric keys for ongoing conversations,
+  stored in IndexedDB under database name `x3dh-sessions` with two object stores:
+  - `sessions`: Stores ratcheting symmetric encryption keys (sending and
+    receiving) keyed by participant DID
+  - `assocData`: Stores associated data strings for AEAD encryption,
+    keyed by participant DID
 - **Environment Detection**: Automatically uses IndexedDB when available,
-  falls back to memory
+  falls back to in-memory storage (not persisted)
 
 ## Usage
 
@@ -194,16 +204,23 @@ const nextMessage = await x3dh.decryptNext('sender-did', nextEncrypted)
 ```
 
 Note: `initReceive()` returns the sender's DID and the decrypted message.
-Session keys are automatically managed and ratcheted for forward secrecy.
+Session keys are automatically managed and ratcheted using a simple symmetric
+ratchet (SHA-256 hash of the previous key). **This is not the Double Ratchet
+protocol** - for production messaging similar to Signal, you would need to
+implement Double Ratchet separately after the X3DH handshake.
 
 ### Session Key Management
 
 Session keys are automatically managed with the following features:
 
-- **IndexedDB Storage**: In browsers, session keys persist across page reloads
+- **IndexedDB Storage**: In browsers, derived symmetric session keys
+  (sending/receiving pairs) persist across page reloads in the `x3dh-sessions`
+  database. **Note**: One-time keys generated with `generateOneTimeKeys()` are
+  stored in memory only, not persisted to IndexedDB
 - **Memory Fallback**: In Node.js, or environments without IndexedDB, uses
-  memory storage
-- **Forward Secrecy**: Keys are ratcheted after each message using SHA-256
+  in-memory storage (all keys lost when process ends)
+- **Basic Ratcheting**: Session keys are ratcheted after each message using
+  SHA-256 (simple symmetric ratchet, not Double Ratchet)
 - **Automatic Cleanup**: Use `destroySessionKey(participantId)` to clean
   up sessions
 
@@ -536,8 +553,10 @@ setIdentityString(id:string):void
 
 #### IndexedDBSessionManager
 
-Session key manager that persists keys to IndexedDB for cross-session
-persistence in browsers.
+Session key manager that persists derived symmetric session keys to IndexedDB
+for cross-session persistence in browsers. Stores data in database `x3dh-sessions`:
+- Object store `sessions`: Serialized sending/receiving key pairs (as number arrays)
+- Object store `assocData`: Associated data strings for AEAD encryption
 
 **Methods:**
 
@@ -562,7 +581,7 @@ Stores session keys for a conversation participant. Derives separate sending and
 getEncryptionKey(id:string, recipient?:boolean):Promise<CryptographyKey>
 ```
 
-Retrieves and ratchets the encryption key for the next message. Implements symmetric ratchet for forward secrecy.
+Retrieves and ratchets the encryption key for the next message. Implements a simple symmetric ratchet (SHA-256 hash).
 
 **Parameters:**
 - `id: string` - Participant identifier
