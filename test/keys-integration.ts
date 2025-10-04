@@ -1,7 +1,7 @@
 import { test } from '@substrate-system/tapzero'
 import { EccKeys } from '@substrate-system/keys/ecc'
-import { X3DH, signBundle, type X3DHKeys } from '../src/index.js'
 import { webcrypto } from '@substrate-system/one-webcrypto'
+import { X3DH, signBundle, type X3DHKeys } from '../src/index.js'
 
 // Helper function to convert EccKeys to X3DHKeys format
 async function eccKeysToX3DHKeys (eccKeys: EccKeys): Promise<X3DHKeys> {
