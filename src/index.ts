@@ -102,8 +102,6 @@ export type InitServerInfo = {
 // Ed25519: Identity and signing
 // X25519: ECDH operations
 
-type InitClientFunction = (id:string)=>Promise<InitServerInfo>
-
 /**
  * Type sent from the sender to the recipient when initiating a connection.
  */
@@ -251,16 +249,16 @@ export class X3DH {
      * Returns the shared secret and handshake data to send to recipient.
      *
      * @param {string} recipientIdentity
-     * @param {InitClientFunction} getServerResponse
+     * @param {InitServerInfo} recipientKeys
      */
     async initSend (
         recipientIdentity:string,
-        getServerResponse:InitClientFunction
+        recipientKeys:InitServerInfo
     ):Promise<InitSendResult> {
         const senderIdentity = this.identityString
         const senderPreKey = this.keys
 
-        const res:InitServerInfo = await getServerResponse(recipientIdentity)
+        const res:InitServerInfo = recipientKeys
 
         // Verify the signature on the signed pre-key
         const identityKey = await importEd25519PublicKey(res.IdentityKey)
@@ -324,7 +322,7 @@ export class X3DH {
         await wipe(DH2)
         await wipe(DH3)
 
-        const handshakeData: InitSenderInfo = {
+        const handshakeData:InitSenderInfo = {
             Sender: senderIdentity,
             IdentityKey: arrayBufferToHex(
                 await webcrypto.subtle.exportKey('raw', senderPreKey.identityPublic)

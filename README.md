@@ -21,9 +21,9 @@ shared secret for encrypted messaging, even when one party is offline.
 This library implements X3DH for browsers using the Web Crypto API.
 
 **This library handles key exchange only.** It returns a shared secret that you
-can use with a ratcheting protocol (like [Double Ratchet]())
+can use with a ratcheting protocol (like [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/))
 for ongoing message encryption.
-No session state is stored - this is a pure key exchange implementation.
+No session state is stored &mdash; this does key exchange only.
 
 
 ## fork
@@ -90,22 +90,25 @@ Node.js automatically:
   API implementations
 
 
-### Key Management
-
-This library integrates with `@substrate-system/keys` for identity
-key management:
-
-- **Identity Keys**: Long-term Ed25519 keys for signing, managed by
-  `@substrate-system/keys`
-- **Pre-Keys**: X25519 keys for Diffie-Hellman key exchange
-- **One-Time Keys**: Ephemeral X25519 keys stored in memory during the session
-  (cleared after use)
-- **Shared Secret**: The result of X3DH is a raw shared secret (`Uint8Array`)
-  that you use to initialize your ratcheting protocol
-
 ## Usage
 
-### Basics with `@substrate-system/keys`
+See [3.1. Overview](https://signal.org/docs/specifications/x3dh/#the-x3dh-protocol)
+
+>
+> X3DH has three phases:
+>
+>   1. Bob publishes his identity key and prekeys to a server.
+>   2. Alice fetches a "prekey bundle" from the server, and uses it to send an
+>      initial message to Bob.
+>   3. Bob receives and processes Alice's initial message.
+>
+
+
+### Get Started
+
+Use `@substrate-system/keys` for identity key management.
+
+#### Alice's side
 
 ```ts
 import { EccKeys } from '@substrate-system/keys/ecc'
@@ -115,10 +118,12 @@ import { X3DH } from '@substrate-system/webcrypto-x3dh'
 const aliceKeys = await EccKeys.create()
 await aliceKeys.persist()
 
-// 2. Generate X25519 pre-keys for X3DH
+// 2. Generate X25519 pre-keys
 const preKeyPair = await X3DH.prekeys()
 
-// 3. Create X3DH keys object
+// 3. Create X3DH keys instance
+//  - aliceKeys has privateWriteKey and publicWriteKey properties
+//  - preKeyPair has privateKey and publicKey properties
 const x3dhKeys = X3DH.X3DHKeys(aliceKeys, preKeyPair)
 
 // 4. Initialize X3DH with keys and identity string
@@ -126,7 +131,99 @@ const x3dh = new X3DH(x3dhKeys, aliceKeys.DID)
 
 // 5. Generate one-time keys for key exchange
 const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
-// Upload oneTimeKeyBundle to your server
+
+// Upload oneTimeKeyBundle to your server so others can retrieve them
+// during key exchange
+
+// 6. Perform key exchange with another user
+// First, fetch the recipient's public keys from your server
+const recipientKeys = await fetch('/api/keys/recipient-did').then(r => r.json())
+// recipientKeys has shape: {
+//   IdentityKey,
+//   SignedPreKey: { Signature, PreKey },
+//   OneTimeKey?
+// }
+
+const result = await x3dh.initSend('recipient-did', recipientKeys)
+
+// Send the handshake to the recipient (via your server or direct messaging),
+// so they can derive the same secret.
+await sendToRecipient(result.handshakeData)
+
+// X3DH is now complete. Use the shared secret to initialize your
+// ratcheting protocol (e.g., Double Ratchet)
+const doubleRatchet = new DoubleRatchet(result.sharedSecret)
+```
+
+#### Bob's side
+
+The other side of the conversation above.
+
+```ts
+import { EccKeys } from '@substrate-system/keys/ecc'
+import { X3DH } from '@substrate-system/webcrypto-x3dh'
+
+// 1. Create identity keys with @substrate-system/keys
+const bobKeys = await EccKeys.create()
+await bobKeys.persist()
+
+// 2. Generate X25519 pre-keys
+const preKeyPair = await X3DH.prekeys()
+
+// 3. Create X3DH keys instance
+const x3dhKeys = X3DH.X3DHKeys(bobKeys, preKeyPair)
+
+// 4. Initialize X3DH with keys and identity string
+const x3dh = new X3DH(x3dhKeys, bobKeys.DID)
+
+// 5. Generate one-time keys for key exchange
+const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
+
+// Upload oneTimeKeyBundle to your server so others can retrieve them
+// during key exchange
+
+// 6. Receive handshake data from Alice
+const handshakeData = await receiveFromSender()  // Get handshake from Alice
+
+const result = await x3dh.initReceive(handshakeData)
+
+// X3DH is now complete. Both sides have the same shared secret.
+//
+// result.sharedSecret is a Uint8Array - the same value Alice has
+// result.senderIdentity is Alice's DID
+
+// Use the shared secret to initialize your ratcheting protocol
+// (e.g., Double Ratchet)
+const doubleRatchet = new DoubleRatchet(result.sharedSecret)
+```
+
+
+#### `static X3DHKeys`
+
+```ts
+class X3DH {
+  static X3DHKeys (
+    idKeys:{
+      privateWriteKey:Ed25519SecretKey,
+      publicWriteKey:Ed25519PublicKey
+    },
+    preKeypair:{
+      privateKey:X25519SecretKey,
+      publicKey:X25519PublicKey
+    }
+  ):X3DHKeys
+}
+```
+
+#### `type X3DHKeys`
+
+```ts
+type X3DHKeys = {
+  identitySecret:Ed25519SecretKey
+  identityPublic:Ed25519PublicKey
+  preKeySecret:X25519SecretKey
+  preKeyPublic:X25519PublicKey
+}
 ```
 
 ### Constructor Options
@@ -150,25 +247,22 @@ const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
 // during key exchange
 
 // Initiate communication (sender side)
-const result = await x3dh.initSend(
-    'recipient-did-string',
-    serverApiCall
-)
+// First, fetch the recipient's public keys from your server
+const recipientKeys = await fetch('/api/keys/recipient-did-string').then(r => r.json())
 
-// result.sharedSecret is a Uint8Array you use to initialize your ratcheting protocol
+const result = await x3dh.initSend('recipient-did-string', recipientKeys)
+
+// result.sharedSecret is a Uint8Array you use to initialize your
+//   ratcheting protocol
 // result.handshakeData is sent to the recipient
 ```
 
-The `serverApiCall` parameter should be a function that sends a request to
-the server to obtain the identity key, signed pre-key, and optional one-time
-key for the handshake.
+The `recipientKeys` parameter should be an object containing the recipient's
+identity key, signed pre-key, and optional one-time key.
 
-See the definition of the `InitClientFunction` type in
-[src/index.ts](./src/index.ts#L130).
+See the definition of the `InitServerInfo` type in [src/index.ts](./src/index.ts):
 
 ```ts
-type InitClientFunction = (id:string)=>Promise<InitServerInfo>
-
 type InitServerInfo = {
     IdentityKey:string;
     SignedPreKey:{
@@ -182,18 +276,27 @@ type InitServerInfo = {
 
 ### Receiving the Key Exchange
 
+Here you derive the same secret value as the sender.
+
 ```ts
 // Receive handshake (recipient side)
 const result = await x3dh.initReceive(handshakeData)
 
+// X3DH is now complete. Both sides have the same shared secret.
 // result.sharedSecret is a Uint8Array - the same value the sender has
 // result.senderIdentity is the sender's DID
-// Use the sharedSecret to initialize your ratcheting protocol (e.g., Double Ratchet)
+
+// Use the shared secret to initialize your ratcheting protocol (e.g., Double Ratchet)
+const doubleRatchet = new DoubleRatchet(result.sharedSecret)
 ```
 
-**Note**: This library only performs the X3DH key exchange. For ongoing message
-encryption, you need to implement or use a ratcheting protocol like Double Ratchet
-with the shared secret returned from `initSend()` and `initReceive()`.
+>
+> [!NOTE]  
+> This library only performs the X3DH key exchange. For ongoing message
+> encryption, you need to implement or use a ratcheting protocol like
+> Double Ratchet with the shared secret returned from
+> `initSend()` and `initReceive()`.
+>
 
 This library does not implement
 [Gossamer integration](https://soatok.blog/2020/11/14/going-bark-a-furrys-guide-to-end-to-end-encryption/#identity-key-management)
@@ -361,14 +464,14 @@ the shared secret.
 ```ts
 initSend(
   recipientIdentity:string,
-  getServerResponse:(id: string) => Promise<{
+  recipientKeys:{
     IdentityKey:string
     SignedPreKey:{
       Signature:string
       PreKey:string
     }
     OneTimeKey?:string
-  }>
+  }
 ):Promise<{
   sharedSecret: Uint8Array
   handshakeData: InitSenderInfo
@@ -377,8 +480,7 @@ initSend(
 
 **Parameters:**
 - `recipientIdentity:string` - DID or identifier of the recipient
-- `getServerResponse:InitClientFunction` - Async function that fetches
-  recipient's public keys from server
+- `recipientKeys:InitServerInfo` - Object containing recipient's public keys
 
 **Returns:** Promise resolving to `InitSendResult` containing:
 - `sharedSecret: Uint8Array` - The derived shared secret from X3DH
@@ -386,10 +488,10 @@ initSend(
 
 **Example:**
 ```ts
-const result = await x3dh.initSend(
-  'did:example:bob',
-  async (id) => await fetch(`/api/keys/${id}`).then(r => r.json())
-)
+// Fetch recipient's keys from your server
+const recipientKeys = await fetch('/api/keys/did:example:bob').then(r => r.json())
+
+const result = await x3dh.initSend('did:example:bob', recipientKeys)
 
 // result.sharedSecret is a Uint8Array to use for your ratcheting protocol
 // Send result.handshakeData to the recipient

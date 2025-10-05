@@ -4,7 +4,7 @@ import { webcrypto } from '@substrate-system/one-webcrypto'
 import { X3DH, signBundle, type X3DHKeys } from '../src/index.js'
 
 // Helper function to convert EccKeys to X3DHKeys format
-async function eccKeysToX3DHKeys (eccKeys: EccKeys): Promise<X3DHKeys> {
+async function eccKeysToX3DHKeys (eccKeys:EccKeys):Promise<X3DHKeys> {
     // Generate an X25519 key pair for pre-keys since ECC keys are Ed25519
     const preKeyPair = await webcrypto.subtle.generateKey(
         { name: 'X25519' },
@@ -84,27 +84,25 @@ test('X3DH integration with @substrate-system/keys', async t => {
     t.equal(foxBundle.bundle.length, 3, 'Fox should generate 3 one-time keys')
     t.equal(wolfBundle.bundle.length, 3, 'Wolf should generate 3 one-time keys')
 
-    // 6. Create a server response function for Wolf's keys
-    const wolfResponse = async () => {
-        const sig = await signBundle(
-            wolfX3DHKeys.identitySecret,
-            [wolfX3DHKeys.preKeyPublic]
-        )
-        const wolfPkBytes = await exportKeyAsBytes(wolfX3DHKeys.identityPublic)
-        const preKeyBytes = await exportKeyAsBytes(wolfX3DHKeys.preKeyPublic)
+    // 6. Prepare Wolf's public keys
+    const sig = await signBundle(
+        wolfX3DHKeys.identitySecret,
+        [wolfX3DHKeys.preKeyPublic]
+    )
+    const wolfPkBytes = await exportKeyAsBytes(wolfX3DHKeys.identityPublic)
+    const preKeyBytes = await exportKeyAsBytes(wolfX3DHKeys.preKeyPublic)
 
-        return {
-            IdentityKey: arrayBufferToHex(toArrayBuffer(wolfPkBytes)),
-            SignedPreKey: {
-                Signature: arrayBufferToHex(toArrayBuffer(sig)),
-                PreKey: arrayBufferToHex(toArrayBuffer(preKeyBytes))
-            },
-            OneTimeKey: wolfBundle.bundle[0]
-        }
+    const wolfPublicKeys = {
+        IdentityKey: arrayBufferToHex(toArrayBuffer(wolfPkBytes)),
+        SignedPreKey: {
+            Signature: arrayBufferToHex(toArrayBuffer(sig)),
+            PreKey: arrayBufferToHex(toArrayBuffer(preKeyBytes))
+        },
+        OneTimeKey: wolfBundle.bundle[0]
     }
 
     // 7. Perform X3DH handshake from Fox to Wolf
-    const sendResult = await foxX3DH.initSend(wolfKeys.DID, wolfResponse)
+    const sendResult = await foxX3DH.initSend(wolfKeys.DID, wolfPublicKeys)
 
     t.ok(sendResult.sharedSecret instanceof Uint8Array, 'Sender should get shared secret')
 
@@ -154,25 +152,23 @@ test('X3DH with session-only keys (no persistence)', async t => {
     t.equal(bobBundle.bundle.length, 2, 'Bob should generate 2 keys')
 
     // Quick handshake test
-    const bobResponse = async () => {
-        const sig = await signBundle(
-            bobX3DHKeys.identitySecret,
-            [bobX3DHKeys.preKeyPublic]
-        )
-        const bobPkBytes = await exportKeyAsBytes(bobX3DHKeys.identityPublic)
-        const preKeyBytes = await exportKeyAsBytes(bobX3DHKeys.preKeyPublic)
+    const sig = await signBundle(
+        bobX3DHKeys.identitySecret,
+        [bobX3DHKeys.preKeyPublic]
+    )
+    const bobPkBytes = await exportKeyAsBytes(bobX3DHKeys.identityPublic)
+    const preKeyBytes = await exportKeyAsBytes(bobX3DHKeys.preKeyPublic)
 
-        return {
-            IdentityKey: arrayBufferToHex(toArrayBuffer(bobPkBytes)),
-            SignedPreKey: {
-                Signature: arrayBufferToHex(toArrayBuffer(sig)),
-                PreKey: arrayBufferToHex(toArrayBuffer(preKeyBytes))
-            },
-            OneTimeKey: bobBundle.bundle[0]
-        }
+    const bobPublicKeys = {
+        IdentityKey: arrayBufferToHex(toArrayBuffer(bobPkBytes)),
+        SignedPreKey: {
+            Signature: arrayBufferToHex(toArrayBuffer(sig)),
+            PreKey: arrayBufferToHex(toArrayBuffer(preKeyBytes))
+        },
+        OneTimeKey: bobBundle.bundle[0]
     }
 
-    const sendResult = await aliceX3DH.initSend(bobKeys.DID, bobResponse)
+    const sendResult = await aliceX3DH.initSend(bobKeys.DID, bobPublicKeys)
     const recvResult = await bobX3DH.initReceive(sendResult.handshakeData)
 
     t.ok(
