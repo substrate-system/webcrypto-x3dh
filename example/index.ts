@@ -66,72 +66,57 @@ async function example () {
 
     // 5. Simulate server response for key exchange
     console.log('5. Performing X3DH handshake...')
-    const bobResponse = async () => {
-        const sig = await signBundle(
-            bobX3DHKeys.identitySecret,
-            [bobX3DHKeys.preKeyPublic]
-        )
-        const identityKeyHex = await keyToHex(bobX3DHKeys.identityPublic)
-        const preKeyHex = await keyToHex(bobX3DHKeys.preKeyPublic)
-        const sigHex = Array.from(sig)
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('')
+    const sig = await signBundle(
+        bobX3DHKeys.identitySecret,
+        [bobX3DHKeys.preKeyPublic]
+    )
+    const identityKeyHex = await keyToHex(bobX3DHKeys.identityPublic)
+    const preKeyHex = await keyToHex(bobX3DHKeys.preKeyPublic)
+    const sigHex = Array.from(sig)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
 
-        return {
-            IdentityKey: identityKeyHex,
-            SignedPreKey: {
-                Signature: sigHex,
-                PreKey: preKeyHex
-            },
-            OneTimeKey: bobBundle.bundle[0]
-        }
+    const bobPublicKeys = {
+        IdentityKey: identityKeyHex,
+        SignedPreKey: {
+            Signature: sigHex,
+            PreKey: preKeyHex
+        },
+        OneTimeKey: bobBundle.bundle[0]
     }
 
     // 6. Alice initiates communication with Bob
-    const initialMessage = 'Hello Bob! This message uses X3DH key agreement.'
-    const handshake = await aliceX3DH.initSend(
+    const aliceResult = await aliceX3DH.initSend(
         bobKeys.DID,
-        bobResponse,
-        initialMessage
+        bobPublicKeys
     )
 
-    debug('Alice sent initial encrypted message')
+    debug('Alice completed X3DH handshake')
+    debug("Alice's shared secret: " +
+        `${toString(aliceResult.sharedSecret.slice(0, 8), 'hex')}...`)
 
-    // 7. Bob receives and decrypts
-    const [sender, decryptedMessage] = await bobX3DH.initReceive(handshake)
+    // 7. Bob receives and processes the handshake
+    const bobResult = await bobX3DH.initReceive(aliceResult.handshakeData)
 
-    debug(`Bob received message from: ${sender}`)
-    debug(`Decrypted: "${decryptedMessage}"\n`)
+    debug(`Bob received handshake from: ${bobResult.senderIdentity}`)
+    debug("Bob's shared secret: " +
+        `${toString(bobResult.sharedSecret.slice(0, 8), 'hex')}...\n`)
 
-    // 8. Ongoing secure communication
-    console.log('6. Testing ongoing secure communication...')
+    // 8. Verify both parties derived the same secret
+    console.log('6. Verifying shared secrets match...')
+    const secretsMatch = aliceResult.sharedSecret.every((byte, i) =>
+        byte === bobResult.sharedSecret[i]
+    )
+    console.log(`   Shared secrets match: ${secretsMatch ? '✓' : '✗'}`)
 
-    // Bob replies
-    const bobReply = 'Hello Alice! The X3DH handshake worked perfectly.'
-    const encryptedReply = await bobX3DH.encryptNext(aliceKeys.DID, bobReply)
-    const aliceReceived = await aliceX3DH.decryptNext(bobKeys.DID, encryptedReply)
-
-    console.log(`   Bob → Alice: "${aliceReceived}"`)
-
-    // Alice responds
-    const aliceResponse = 'Great! Our identities are managed ' +
-        'by @substrate-system/keys.'
-    const encryptedResponse = await aliceX3DH.encryptNext(bobKeys.DID, aliceResponse)
-    const bobReceived = await bobX3DH.decryptNext(aliceKeys.DID, encryptedResponse)
-
-    debug(`   Alice → Bob: "${bobReceived}"\n`)
-
-    // 9. Demonstrate key management features
-    console.log('7. Key management features:')
-    console.log('   • Identity keys are persisted automatically (browser only)')
-    console.log('   • @substrate-system/keys handles key persistence')
-    console.log('   • Session keys are managed separately from identity keys\n')
+    // 9. What to do next
+    console.log('\n7. Next steps:')
+    console.log('   • X3DH key exchange is complete')
+    console.log('   • Both parties have the same shared secret')
+    console.log('   • Use the shared secret to initialize a ratcheting protocol')
+    console.log('     (e.g., Double Ratchet) for ongoing message encryption\n')
 
     console.log('Example completed successfully!')
-    console.log('\nNOTE: In Node.js environment, use EccKeys.create(true) for' +
-        ' session-only keys.')
-    console.log('      In browser environment, omit the parameter for ' +
-        'persistence.')
 
     // Clean up (browser only)
     if (typeof window !== 'undefined') {
@@ -149,7 +134,7 @@ if (typeof window !== 'undefined') {
 export { example }
 
 // Helper
-async function keyToHex (key):Promise<string> {
+async function keyToHex (key:CryptoKey):Promise<string> {
     const raw = await webcrypto.subtle.exportKey('raw', key)
     return toString(new Uint8Array(raw), 'hex')
 }

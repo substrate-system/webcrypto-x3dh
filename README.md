@@ -246,7 +246,8 @@ const oneTimeKeyBundle = await x3dh.generateOneTimeKeys(10)
 
 // Initiate communication (sender side)
 // First, fetch the recipient's public keys from your server
-const recipientKeys = await fetch('/api/keys/recipient-did-string').then(r => r.json())
+const recipientKeys = await fetch('/api/keys/recipient-did-string')
+  .then(r => r.json())
 
 const result = await x3dh.initSend('recipient-did-string', recipientKeys)
 
@@ -274,7 +275,7 @@ type InitServerInfo = {
 
 ### Receiving the Key Exchange
 
-Here you derive the same secret value as the sender.
+Derive the same secret value as the sender.
 
 ```ts
 // Receive handshake (recipient side)
@@ -284,7 +285,8 @@ const result = await x3dh.initReceive(handshakeData)
 // result.sharedSecret is a Uint8Array - the same value the sender has
 // result.senderIdentity is the sender's DID
 
-// Use the shared secret to initialize your ratcheting protocol (e.g., Double Ratchet)
+// Use the shared secret to initialize your ratcheting protocol
+// (e.g., Double Ratchet)
 const doubleRatchet = new DoubleRatchet(result.sharedSecret)
 ```
 
