@@ -12,29 +12,24 @@ in ***[Going Bark: A Furry's Guide to End-to-End Encryption](https://soatok.blog
 
 This uses the
 [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API),
-so is usable in browsers.
+so it works in the browser.
 
 X3DH ([Extended Triple Diffie-Hellman](https://signal.org/docs/specifications/x3dh/))
 is a secure key exchange protocol for
 end-to-end encrypted communication. It allows two parties to establish a
 shared secret for encrypted messaging, even when one party is offline.
-This library implements X3DH for browsers using the Web Crypto API.
+
 
 **This library handles key exchange only.** It returns a shared secret that you
 can use with a ratcheting protocol (like [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/))
 for ongoing message encryption.
 No session state is stored &mdash; this does key exchange only.
 
-
-## fork
-
-This is a fork of [soatok/rawr-x3dh](https://github.com/soatok/rawr-x3dh).
-Thanks `@soatok` for working in public.
-
 ## Contents
 
 <!-- toc -->
 
+- [fork](#fork)
 - [Install](#install)
 - [What's This?](#whats-this)
 - [Platform Independence](#platform-independence)
@@ -50,6 +45,11 @@ Thanks `@soatok` for working in public.
 - [Should I Use This?](#should-i-use-this)
 
 <!-- tocstop -->
+
+## fork
+
+This is a fork of [soatok/rawr-x3dh](https://github.com/soatok/rawr-x3dh).
+Thanks `@soatok` for working in public.
 
 ## Install
 
@@ -104,7 +104,49 @@ See [3.1. Overview](https://signal.org/docs/specifications/x3dh/#the-x3dh-protoc
 
 ### Get Started
 
-Use `@substrate-system/keys` for identity key management.
+Use [@substrate-system/keys](https://github.com/substrate-system/keys) for
+identity key management.
+
+Alice wants to start a conversation with Bob. Bob has already published some
+public keys to the server.
+
+Every user has an identity key (IK) &mdash; a long-term, static ed25519 keypair.
+
+At this point Bob should have published an identity key, a signed pre-key (SPK),
+and a one-time pre-key (OPK).
+
+Alice must have an identity key and an **ephemeral key** (EK), which is created
+fresh for each session.
+
+1. Alice fetches Bob's identity key, signed pre-key, and possibly
+   one-time pre-key
+2. Alice computes 4 Diffie-Hellman exchanges:
+  1. IK_A x SPK_B
+  2. EK_A x IK_B
+  3. EK_A x SPK_B
+  4. EK_A x OPK_B
+3. Those results are combined via a KDF to produce a **shared secret**.
+4. Alice sends her first encrypted message to Bob, including EK_A, her
+   identity info, and the used prekey identifiers
+5. Bob does the same DH calculations and derives the same shared secret.
+
+
+When all is said and done, both parties have the same shared secret key
+material.
+
+
+* The **ephemeral keys** give us _forward secrecy_, meaning that if
+  long-term keys are compromised, previous sessions remain secure.
+* The pre-keys are signed, which prevents impersonation attacks.
+
+
+Since messages are authenticated via ephemeral DH rather than digital
+signatures on each message, a third party can’t cryptographically prove you
+authored a message.
+
+**One-time pre-keys** prevent an attacker from re-using an initial handshake to
+trick you into deriving the same session key again.
+
 
 #### Alice's side
 
