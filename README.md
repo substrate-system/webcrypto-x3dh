@@ -14,17 +14,6 @@ This uses the
 [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API),
 so it works in the browser.
 
-X3DH ([Extended Triple Diffie-Hellman](https://signal.org/docs/specifications/x3dh/))
-is a secure key exchange protocol for
-end-to-end encrypted communication. It allows two parties to establish a
-shared secret for encrypted messaging, even when one party is offline.
-
-
-**This library handles key exchange only.** It returns a shared secret that you
-can use with a ratcheting protocol (like [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/))
-for ongoing message encryption.
-No session state is stored &mdash; this does key exchange only.
-
 ## Contents
 
 <!-- toc -->
@@ -34,7 +23,7 @@ No session state is stored &mdash; this does key exchange only.
 - [What's This?](#whats-this)
 - [Platform Independence](#platform-independence)
   * [Improved Browser Compatibility (v0.4.0)](#improved-browser-compatibility-v040)
-- [Usage](#usage)
+- [Use](#use)
   * [Get Started](#get-started)
   * [Constructor Options](#constructor-options)
   * [Performing X3DH Key Exchange](#performing-x3dh-key-exchange)
@@ -45,6 +34,30 @@ No session state is stored &mdash; this does key exchange only.
 - [Should I Use This?](#should-i-use-this)
 
 <!-- tocstop -->
+
+
+X3DH ([Extended Triple Diffie-Hellman](https://signal.org/docs/specifications/x3dh/))
+is a secure key exchange protocol for
+end-to-end encrypted communication. It allows two parties to establish a
+shared secret for encrypted messaging, even when one party is offline.
+
+**This library handles key exchange only.** It returns a shared secret that you
+can use with a ratcheting protocol (like [Double Ratchet](https://signal.org/docs/specifications/doubleratchet/))
+for ongoing message encryption.
+No session state is stored &mdash; this does key exchange only.
+
+## Triple
+
+The standard X3DH handshake usually includes three exchanges:
+
+1. Alice’s ephemeral key + Bob’s identity key
+2. Alice’s ephemeral key + Bob’s signed prekey
+3. (Optionally) Alice’s identity key + Bob’s signed prekey
+
+These three Diffie–Hellman results are then concatenated and
+passed through a KDF (key derivation function) to produce a single strong
+shared secret.
+
 
 ## fork
 
@@ -88,9 +101,9 @@ Node.js automatically:
   API implementations
 
 
-## Usage
+## Use
 
-See [3.1. Overview](https://signal.org/docs/specifications/x3dh/#the-x3dh-protocol)
+See [Signal docs - 3.1. Overview](https://signal.org/docs/specifications/x3dh/#the-x3dh-protocol)
 
 >
 > X3DH has three phases:
