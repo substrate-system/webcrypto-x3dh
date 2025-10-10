@@ -46,8 +46,6 @@ can use with a ratcheting protocol (like [Double Ratchet](https://signal.org/doc
 for ongoing message encryption.
 No session state is stored &mdash; this does key exchange only.
 
-## Triple
-
 The standard X3DH handshake usually includes three exchanges:
 
 1. Alice’s ephemeral key + Bob’s identity key
